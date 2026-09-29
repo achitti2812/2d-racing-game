@@ -15,7 +15,7 @@ EDGE_LINE_WIDTH = 6
 LANE_LINE_WIDTH = 5
 DASH_HEIGHT = 42
 DASH_GAP = 34
-ROAD_SCROLL_SPEED = 300  # Pixels per second; intentionally constant for now.
+ROAD_SCROLL_MULTIPLIER = 3.0
 
 # Player layout and steering
 PLAYER_BODY_WIDTH = 70
@@ -24,6 +24,13 @@ PLAYER_WHEEL_OVERHANG = 5
 PLAYER_STEER_SPEED = 300  # Horizontal pixels per second.
 PLAYER_START_X = SCREEN_WIDTH / 2
 PLAYER_Y = SCREEN_HEIGHT - 172
+
+# Speed and acceleration settings (temporary game-speed units)
+MIN_SPEED = 0.0
+MAX_SPEED = 180.0
+ACCELERATION = 75.0
+BRAKE_DECELERATION = 120.0
+COAST_DECELERATION = 30.0
 
 # Colors
 TERRAIN_COLOR = (27, 67, 42)
@@ -172,16 +179,57 @@ def draw_player_car(surface, player_x, player_y):
     pygame.draw.rect(surface, (255, 236, 151), (car_left + 46, car_top + 8, 12, 6))
 
 
-def draw_hud(surface, title_font, label_font):
-    """Draw the temporary Step 2 labels."""
-    panel = pygame.Surface((150, 65), pygame.SRCALPHA)
+def get_control_input():
+    """Read continuous steering, acceleration, and braking input."""
+    keys = pygame.key.get_pressed()
+
+    steer_left = keys[pygame.K_a] or keys[pygame.K_LEFT]
+    steer_right = keys[pygame.K_d] or keys[pygame.K_RIGHT]
+    steering_direction = int(steer_right) - int(steer_left)
+
+    accelerate_pressed = keys[pygame.K_w] or keys[pygame.K_UP]
+    brake_pressed = keys[pygame.K_s] or keys[pygame.K_DOWN]
+
+    return steering_direction, accelerate_pressed, brake_pressed
+
+
+def update_player_speed(player_speed, accelerate_pressed, brake_pressed, delta_time):
+    """Apply acceleration, braking, or natural coasting to player speed."""
+    if accelerate_pressed and not brake_pressed:
+        player_speed += ACCELERATION * delta_time
+    elif brake_pressed and not accelerate_pressed:
+        player_speed -= BRAKE_DECELERATION * delta_time
+    elif not accelerate_pressed and not brake_pressed:
+        player_speed -= COAST_DECELERATION * delta_time
+    # If both are pressed, acceleration and braking cancel with no speed change.
+
+    return max(MIN_SPEED, min(player_speed, MAX_SPEED))
+
+
+def draw_hud(surface, title_font, label_font, control_font, player_speed):
+    """Draw the temporary Step 3 labels, speed, and control hint."""
+    panel = pygame.Surface((150, 88), pygame.SRCALPHA)
     panel.fill((10, 12, 14, 175))
     surface.blit(panel, (18, 18))
 
     title = title_font.render("2D RACING", True, WHITE)
-    step_label = label_font.render("STEP 2", True, (190, 206, 196))
+    step_label = label_font.render("STEP 3", True, (190, 206, 196))
+    speed_label = label_font.render(f"SPEED: {round(player_speed)}", True, WHITE)
     surface.blit(title, (30, 27))
-    surface.blit(step_label, (30, 55))
+    surface.blit(step_label, (30, 52))
+    surface.blit(speed_label, (30, 75))
+
+    control_text = "W/UP ACCELERATE   S/DOWN BRAKE   A/D OR LEFT/RIGHT STEER"
+    control_hint = control_font.render(control_text, True, WHITE)
+    hint_padding = 8
+    hint_width = control_hint.get_width() + hint_padding * 2
+    hint_panel = pygame.Surface(
+        (hint_width, control_hint.get_height() + hint_padding * 2), pygame.SRCALPHA
+    )
+    hint_panel.fill((10, 12, 14, 150))
+    hint_x = SCREEN_WIDTH - hint_width - 18
+    surface.blit(hint_panel, (hint_x, 18))
+    surface.blit(control_hint, (hint_x + hint_padding, 18 + hint_padding))
 
 
 def main():
@@ -192,11 +240,13 @@ def main():
 
     title_font = pygame.font.Font(None, 29)
     label_font = pygame.font.Font(None, 22)
+    control_font = pygame.font.Font(None, 18)
 
     running = True
     dash_offset = 0.0
     dash_cycle = DASH_HEIGHT + DASH_GAP
     player_x = PLAYER_START_X
+    player_speed = MIN_SPEED
 
     # Include the wheel overhang when keeping the whole visible car on the road.
     player_half_width = PLAYER_BODY_WIDTH / 2 + PLAYER_WHEEL_OVERHANG
@@ -212,24 +262,23 @@ def main():
                 if event.type == pygame.QUIT:
                     running = False
 
-            # Time-based motion stays smooth if an individual frame takes longer.
-            dash_offset = (dash_offset + ROAD_SCROLL_SPEED * delta_time) % dash_cycle
-
-            # get_pressed() reports which keys are held during this frame.
-            keys = pygame.key.get_pressed()
-            steering_direction = 0
-            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                steering_direction -= 1
-            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                steering_direction += 1
+            steering_direction, accelerate_pressed, brake_pressed = get_control_input()
 
             player_x += steering_direction * PLAYER_STEER_SPEED * delta_time
             player_x = max(player_min_x, min(player_x, player_max_x))
 
+            player_speed = update_player_speed(
+                player_speed, accelerate_pressed, brake_pressed, delta_time
+            )
+
+            # The car stays fixed vertically; road motion suggests forward speed.
+            road_scroll_speed = player_speed * ROAD_SCROLL_MULTIPLIER
+            dash_offset = (dash_offset + road_scroll_speed * delta_time) % dash_cycle
+
             draw_terrain(screen)
             draw_road(screen, dash_offset)
             draw_player_car(screen, player_x, PLAYER_Y)
-            draw_hud(screen, title_font, label_font)
+            draw_hud(screen, title_font, label_font, control_font, player_speed)
 
             pygame.display.flip()
     finally:
