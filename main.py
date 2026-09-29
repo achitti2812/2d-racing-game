@@ -16,6 +16,7 @@ LANE_LINE_WIDTH = 5
 DASH_HEIGHT = 42
 DASH_GAP = 34
 ROAD_SCROLL_MULTIPLIER = 3.0
+RELATIVE_MOTION_SCALE = 1.25
 
 # Player layout and steering
 PLAYER_BODY_WIDTH = 70
@@ -24,6 +25,10 @@ PLAYER_WHEEL_OVERHANG = 5
 PLAYER_STEER_SPEED = 300  # Horizontal pixels per second.
 PLAYER_START_X = SCREEN_WIDTH / 2
 PLAYER_Y = SCREEN_HEIGHT - 172
+
+# Opponent car layout
+OPPONENT_WIDTH = 62
+OPPONENT_HEIGHT = 116
 
 # Speed and acceleration settings (temporary game-speed units)
 MIN_SPEED = 0.0
@@ -179,6 +184,110 @@ def draw_player_car(surface, player_x, player_y):
     pygame.draw.rect(surface, (255, 236, 151), (car_left + 46, car_top + 8, 12, 6))
 
 
+def draw_opponent_car(surface, opponent):
+    """Draw a compact top-down race car with a rear wing and center stripe."""
+    car_center_x = round(opponent["x"])
+    car_top = round(opponent["y"])
+    car_left = car_center_x - OPPONENT_WIDTH // 2
+    body_color = opponent["color"]
+    accent_color = opponent["accent_color"]
+
+    # Four exposed wheels distinguish the rivals from the player's car.
+    wheel_width = 9
+    wheel_height = 25
+    for wheel_x in (car_left - 4, car_left + OPPONENT_WIDTH - 5):
+        pygame.draw.rect(
+            surface,
+            BLACK,
+            (wheel_x, car_top + 20, wheel_width, wheel_height),
+            border_radius=3,
+        )
+        pygame.draw.rect(
+            surface,
+            BLACK,
+            (wheel_x, car_top + 74, wheel_width, wheel_height),
+            border_radius=3,
+        )
+
+    body_points = [
+        (car_center_x - 19, car_top),
+        (car_center_x + 19, car_top),
+        (car_left + OPPONENT_WIDTH, car_top + 24),
+        (car_left + OPPONENT_WIDTH - 3, car_top + OPPONENT_HEIGHT - 13),
+        (car_center_x + 22, car_top + OPPONENT_HEIGHT),
+        (car_center_x - 22, car_top + OPPONENT_HEIGHT),
+        (car_left + 3, car_top + OPPONENT_HEIGHT - 13),
+        (car_left, car_top + 24),
+    ]
+    pygame.draw.polygon(surface, body_color, body_points)
+    pygame.draw.polygon(surface, BLACK, body_points, width=2)
+
+    # A racing stripe, dark cockpit, and rear wing create a distinct silhouette.
+    pygame.draw.rect(
+        surface,
+        accent_color,
+        (car_center_x - 4, car_top + 5, 8, OPPONENT_HEIGHT - 15),
+    )
+    pygame.draw.polygon(
+        surface,
+        WINDOW_COLOR,
+        [
+            (car_center_x - 19, car_top + 34),
+            (car_center_x + 19, car_top + 34),
+            (car_center_x + 23, car_top + 57),
+            (car_center_x - 23, car_top + 57),
+        ],
+    )
+    pygame.draw.polygon(
+        surface,
+        WINDOW_COLOR,
+        [
+            (car_center_x - 22, car_top + 64),
+            (car_center_x + 22, car_top + 64),
+            (car_center_x + 18, car_top + 83),
+            (car_center_x - 18, car_top + 83),
+        ],
+    )
+    pygame.draw.rect(
+        surface,
+        accent_color,
+        (car_left - 3, car_top + OPPONENT_HEIGHT - 13, OPPONENT_WIDTH + 6, 7),
+        border_radius=2,
+    )
+    pygame.draw.rect(surface, BLACK, (car_left - 3, car_top + 10, 10, 5))
+    pygame.draw.rect(
+        surface, BLACK, (car_left + OPPONENT_WIDTH - 7, car_top + 10, 10, 5)
+    )
+
+
+def create_opponents():
+    """Create the three persistent rivals in a simple starting formation."""
+    opponent_specs = [
+        ("BLUE", 0, 445.0, 125.0, (45, 143, 207), (225, 240, 248)),
+        ("GOLD", 1, 330.0, 155.0, (224, 164, 43), (75, 51, 14)),
+        ("PURPLE", 2, 445.0, 140.0, (137, 83, 190), (236, 224, 247)),
+    ]
+    opponents = []
+
+    for identifier, lane, start_y, speed, color, accent_color in opponent_specs:
+        lane_center_x = ROAD_LEFT + LANE_WIDTH * (lane + 0.5)
+        start_distance = (PLAYER_Y - start_y) / RELATIVE_MOTION_SCALE
+        opponents.append(
+            {
+                "id": identifier,
+                "lane": lane,
+                "x": lane_center_x,
+                "y": start_y,
+                "speed": speed,
+                "distance": start_distance,
+                "color": color,
+                "accent_color": accent_color,
+            }
+        )
+
+    return opponents
+
+
 def get_control_input():
     """Read continuous steering, acceleration, and braking input."""
     keys = pygame.key.get_pressed()
@@ -206,18 +315,54 @@ def update_player_speed(player_speed, accelerate_pressed, brake_pressed, delta_t
     return max(MIN_SPEED, min(player_speed, MAX_SPEED))
 
 
-def draw_hud(surface, title_font, label_font, control_font, player_speed):
-    """Draw the temporary Step 3 labels, speed, and control hint."""
-    panel = pygame.Surface((150, 88), pygame.SRCALPHA)
+def update_road(dash_offset, player_speed, delta_time):
+    """Advance the repeating road markings according to player speed."""
+    dash_cycle = DASH_HEIGHT + DASH_GAP
+    road_scroll_speed = player_speed * ROAD_SCROLL_MULTIPLIER
+    return (dash_offset + road_scroll_speed * delta_time) % dash_cycle
+
+
+def update_race_distances(player_distance, player_speed, opponents, delta_time):
+    """Advance every competitor's persistent logical race distance."""
+    player_distance += player_speed * delta_time
+    for opponent in opponents:
+        opponent["distance"] += opponent["speed"] * delta_time
+    return player_distance
+
+
+def update_opponent_positions(opponents, player_distance):
+    """Convert each rival's distance lead or deficit into a screen position."""
+    for opponent in opponents:
+        distance_difference = opponent["distance"] - player_distance
+        opponent["y"] = PLAYER_Y - distance_difference * RELATIVE_MOTION_SCALE
+
+
+def calculate_player_position(player_distance, opponents):
+    """Return the player's temporary rank among all four race cars."""
+    opponents_ahead = sum(
+        opponent["distance"] > player_distance for opponent in opponents
+    )
+    return opponents_ahead + 1
+
+
+def draw_hud(
+    surface, title_font, label_font, control_font, player_speed, player_position
+):
+    """Draw the temporary Step 4 labels, speed, position, and control hint."""
+    panel = pygame.Surface((165, 111), pygame.SRCALPHA)
     panel.fill((10, 12, 14, 175))
     surface.blit(panel, (18, 18))
 
     title = title_font.render("2D RACING", True, WHITE)
-    step_label = label_font.render("STEP 3", True, (190, 206, 196))
+    step_label = label_font.render("STEP 4", True, (190, 206, 196))
     speed_label = label_font.render(f"SPEED: {round(player_speed)}", True, WHITE)
+    position_label = label_font.render(
+        f"POSITION: {player_position}/4", True, WHITE
+    )
     surface.blit(title, (30, 27))
     surface.blit(step_label, (30, 52))
     surface.blit(speed_label, (30, 75))
+    surface.blit(position_label, (30, 98))
 
     control_text = "W/UP ACCELERATE   S/DOWN BRAKE   A/D OR LEFT/RIGHT STEER"
     control_hint = control_font.render(control_text, True, WHITE)
@@ -244,9 +389,10 @@ def main():
 
     running = True
     dash_offset = 0.0
-    dash_cycle = DASH_HEIGHT + DASH_GAP
     player_x = PLAYER_START_X
     player_speed = MIN_SPEED
+    player_distance = 0.0
+    opponents = create_opponents()
 
     # Include the wheel overhang when keeping the whole visible car on the road.
     player_half_width = PLAYER_BODY_WIDTH / 2 + PLAYER_WHEEL_OVERHANG
@@ -271,14 +417,27 @@ def main():
                 player_speed, accelerate_pressed, brake_pressed, delta_time
             )
 
-            # The car stays fixed vertically; road motion suggests forward speed.
-            road_scroll_speed = player_speed * ROAD_SCROLL_MULTIPLIER
-            dash_offset = (dash_offset + road_scroll_speed * delta_time) % dash_cycle
+            dash_offset = update_road(dash_offset, player_speed, delta_time)
+            player_distance = update_race_distances(
+                player_distance, player_speed, opponents, delta_time
+            )
+            update_opponent_positions(opponents, player_distance)
+            player_position = calculate_player_position(player_distance, opponents)
 
             draw_terrain(screen)
             draw_road(screen, dash_offset)
+            for opponent in opponents:
+                if -OPPONENT_HEIGHT - 20 <= opponent["y"] <= SCREEN_HEIGHT + 20:
+                    draw_opponent_car(screen, opponent)
             draw_player_car(screen, player_x, PLAYER_Y)
-            draw_hud(screen, title_font, label_font, control_font, player_speed)
+            draw_hud(
+                screen,
+                title_font,
+                label_font,
+                control_font,
+                player_speed,
+                player_position,
+            )
 
             pygame.display.flip()
     finally:
