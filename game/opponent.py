@@ -22,14 +22,16 @@ class Opponent:
         min_target_factor,
         max_target_factor,
         decision_time_range,
+        curve_caution,
         color,
         accent_color,
         random_source,
+        track,
     ):
         self.identifier = identifier
         self.personality = personality
         self.lane = lane
-        self.x = settings.ROAD_LEFT + settings.LANE_WIDTH * (lane + 0.5)
+        self.lane_offset = (lane - 1) * settings.LANE_WIDTH
         self.y = start_y
         self.current_speed = 0.0
         self.max_speed = max_speed
@@ -38,6 +40,7 @@ class Opponent:
         self.min_target_factor = min_target_factor
         self.max_target_factor = max_target_factor
         self.decision_time_range = decision_time_range
+        self.curve_caution = curve_caution
         self.random_source = random_source
         self.distance = (
             settings.PLAYER_Y - start_y
@@ -47,8 +50,11 @@ class Opponent:
         self.finished = False
         self.finish_time = None
         self.finish_position = None
-        self.target_speed = self._random_target_speed()
+        self.cruise_target_speed = self._random_target_speed()
+        self.target_speed = self.cruise_target_speed
+        self.upcoming_curve_strength = 0.0
         self.decision_timer = self._random_decision_time()
+        self.x = track.get_center_x(self.distance) + self.lane_offset
 
     def _random_decision_time(self):
         return self.random_source.uniform(*self.decision_time_range)
@@ -79,12 +85,12 @@ class Opponent:
             settings.AI_MIN_TARGET_FACTOR,
             min(target_factor, settings.AI_MAX_TARGET_FACTOR),
         )
-        self.target_speed = min(
+        self.cruise_target_speed = min(
             self.max_speed, self.max_speed * target_factor
         )
         self.decision_timer = self._random_decision_time()
 
-    def update_ai(self, player_distance, delta_time):
+    def update_ai(self, player_distance, delta_time, track):
         """Smoothly approach a periodically selected competitive target."""
         if self.finished:
             return
@@ -92,6 +98,22 @@ class Opponent:
         self.decision_timer -= delta_time
         if self.decision_timer <= 0.0:
             self._choose_target_speed(player_distance)
+
+        # Looking ahead lets lane-locked racers brake physically before a bend.
+        # Personality only scales a modest reduction; it never changes distance.
+        self.upcoming_curve_strength = track.get_upcoming_curve_strength(
+            self.distance
+        )
+        curve_reduction = min(
+            settings.AI_MAX_CURVE_SPEED_REDUCTION,
+            self.upcoming_curve_strength
+            * settings.AI_CURVE_SPEED_REDUCTION_FACTOR
+            * self.curve_caution,
+        )
+        self.target_speed = max(
+            settings.AI_MIN_CURVE_TARGET_SPEED,
+            self.cruise_target_speed - curve_reduction,
+        )
 
         if self.current_speed < self.target_speed:
             self.current_speed = min(
@@ -112,12 +134,11 @@ class Opponent:
         if not self.finished:
             self.distance += self.current_speed * delta_time
 
-    def update_screen_position(self, camera_distance):
-        distance_difference = self.distance - camera_distance
-        self.y = (
-            settings.PLAYER_Y
-            - distance_difference * settings.RELATIVE_MOTION_SCALE
+    def update_screen_position(self, camera_distance, track):
+        self.y = track.world_distance_to_screen_y(
+            self.distance, camera_distance
         )
+        self.x = track.get_center_x(self.distance) + self.lane_offset
 
     def is_visible(self):
         return (
@@ -267,7 +288,7 @@ class Opponent:
             text_y += rendered_line.get_height() + line_gap
 
 
-def create_opponents(random_source=None):
+def create_opponents(track, random_source=None):
     """Create the three personalities in the unchanged starting formation."""
     if random_source is None:
         random_source = random.Random()
@@ -284,6 +305,7 @@ def create_opponents(random_source=None):
             "min_target_factor": 0.97,
             "max_target_factor": 1.0,
             "decision_time_range": (1.5, 2.4),
+            "curve_caution": 1.05,
             "color": (45, 143, 207),
             "accent_color": (225, 240, 248),
         },
@@ -298,6 +320,7 @@ def create_opponents(random_source=None):
             "min_target_factor": 0.94,
             "max_target_factor": 0.99,
             "decision_time_range": (2.6, 4.0),
+            "curve_caution": 1.0,
             "color": (224, 164, 43),
             "accent_color": (75, 51, 14),
         },
@@ -312,11 +335,12 @@ def create_opponents(random_source=None):
             "min_target_factor": 0.965,
             "max_target_factor": 0.995,
             "decision_time_range": (2.0, 3.2),
+            "curve_caution": 0.95,
             "color": (137, 83, 190),
             "accent_color": (236, 224, 247),
         },
     ]
     return [
-        Opponent(random_source=random_source, **spec)
+        Opponent(random_source=random_source, track=track, **spec)
         for spec in opponent_specs
     ]

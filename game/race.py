@@ -9,6 +9,7 @@ from game.collision import find_player_collision, handle_collision
 from game.opponent import create_opponents
 from game.player import Player
 from game.road import Road
+from game.track import Track
 from screens.results import draw_results
 
 
@@ -26,14 +27,22 @@ class Race:
         self.results_font = pygame.font.Font(None, 34)
         self.results_small_font = pygame.font.Font(None, 26)
         self.ai_debug_font = pygame.font.Font(None, 15)
+        self.track_debug_font = pygame.font.Font(None, 18)
         self.reset_race()
 
     def reset_race(self):
         """Reset all race-specific state without reinitializing Pygame."""
         self.state = settings.COUNTDOWN
+        self.track = Track()
         self.player = Player()
-        self.opponents = create_opponents(self.random_source)
-        self.road = Road()
+        self.player.sync_track_state(
+            self.track.get_center_x(self.player.distance),
+            self.track.get_curve_strength(self.player.distance),
+        )
+        self.opponents = create_opponents(
+            self.track, random_source=self.random_source
+        )
+        self.road = Road(self.track)
         self.camera_distance = 0.0
         self.player_position = 4
         self.finishing_order = []
@@ -72,15 +81,26 @@ class Race:
 
         player_was_finished = self.player.finished
         if not player_was_finished:
-            self.player.update_controls(delta_time)
+            self.player.update_controls(
+                delta_time,
+                self.track.get_center_x(self.player.distance),
+                self.track.get_curve_strength(self.player.distance),
+            )
         else:
             self.player.coast_after_finish(delta_time)
             self.camera_distance += self.player.speed * delta_time
 
         for opponent in self.opponents:
-            opponent.update_ai(self.player.distance, delta_time)
+            opponent.update_ai(
+                self.player.distance, delta_time, self.track
+            )
 
         previous_distances = self._update_race_distances(delta_time)
+
+        self.player.sync_track_state(
+            self.track.get_center_x(self.player.distance),
+            self.track.get_curve_strength(self.player.distance),
+        )
 
         if not player_was_finished:
             # Preserve crossing overshoot so the finish line passes the car.
@@ -90,7 +110,9 @@ class Race:
             previous_distances, frame_start_time, delta_time
         )
         for opponent in self.opponents:
-            opponent.update_screen_position(self.camera_distance)
+            opponent.update_screen_position(
+                self.camera_distance, self.track
+            )
         self.player_position = self._calculate_player_position()
 
         if (
@@ -103,8 +125,12 @@ class Race:
             )
             if collided_opponent is not None:
                 handle_collision(self.player, collided_opponent)
-
-        self.road.update(self.player.speed, delta_time)
+                self.player.sync_track_state(
+                    self.track.get_center_x(self.player.distance),
+                    self.track.get_curve_strength(self.player.distance),
+                )
+                if self.player.off_road:
+                    self.player.stop_nitro()
 
     def _update_race_distances(self, delta_time):
         previous_distances = {"PLAYER": self.player.distance}
@@ -248,6 +274,8 @@ class Race:
                 )
 
         self._draw_hud(surface)
+        if settings.SHOW_TRACK_DEBUG:
+            self._draw_track_debug(surface)
         if self.player.crash_message_timer > 0.0:
             self._draw_crash_message(surface)
         self._draw_start_signal(surface)
@@ -270,7 +298,7 @@ class Race:
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 8", True, (190, 206, 196)
+            "STEP 9", True, (190, 206, 196)
         )
         speed_label = self.label_font.render(
             f"SPEED: {round(self.player.speed)}", True, settings.WHITE
@@ -340,6 +368,44 @@ class Race:
             control_hint,
             (hint_x + hint_padding, 18 + hint_padding),
         )
+
+        if (
+            self.player.off_road
+            and self.state == settings.RACING
+            and not self.player.finished
+        ):
+            off_road_label = self.label_font.render(
+                "OFF ROAD", True, (255, 198, 82)
+            )
+            off_road_panel = pygame.Surface(
+                (off_road_label.get_width() + 16, 27), pygame.SRCALPHA
+            )
+            off_road_panel.fill((35, 23, 10, 190))
+            surface.blit(off_road_panel, (18, 218))
+            surface.blit(off_road_label, (26, 222))
+
+    def _draw_track_debug(self, surface):
+        """Show compact curved-track handling data when explicitly enabled."""
+        debug_lines = (
+            f"TRACK CENTER {self.player.track_center_x:.1f}",
+            f"CURVE {self.player.curve_strength:+.4f}",
+            f"FORCE {self.player.curve_force:+.1f}",
+            f"OFF ROAD {self.player.off_road}",
+        )
+        rendered = [
+            self.track_debug_font.render(line, True, settings.WHITE)
+            for line in debug_lines
+        ]
+        panel_width = max(line.get_width() for line in rendered) + 16
+        panel_height = sum(line.get_height() for line in rendered) + 12
+        panel = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+        panel.fill((8, 10, 12, 185))
+        panel_y = 254
+        surface.blit(panel, (18, panel_y))
+        text_y = panel_y + 6
+        for line in rendered:
+            surface.blit(line, (26, text_y))
+            text_y += line.get_height()
 
     def _draw_crash_message(self, surface):
         crash_text = self.crash_font.render(

@@ -22,20 +22,44 @@ class Player:
         self.nitro_amount = self.nitro_capacity
         self.nitro_active = False
         self.nitro_recharge_delay = 0.0
+        self.track_center_x = settings.PLAYER_START_X
+        self.curve_strength = 0.0
+        self.curve_force = 0.0
+        self.off_road = False
+        self._update_track_limits(self.track_center_x)
+
+    @property
+    def car_half_width(self):
+        return settings.PLAYER_BODY_WIDTH / 2 + settings.PLAYER_WHEEL_OVERHANG
+
+    def _update_track_limits(self, track_center_x):
+        """Update drivable and outer limits for the player's track position."""
+        half_road_width = settings.ROAD_WIDTH / 2
+        self.road_min_x = track_center_x - half_road_width + self.car_half_width
+        self.road_max_x = track_center_x + half_road_width - self.car_half_width
+        self.outer_min_x = self.road_min_x - settings.OFF_ROAD_OUTER_MARGIN
+        self.outer_max_x = self.road_max_x + settings.OFF_ROAD_OUTER_MARGIN
+
+    def sync_track_state(self, track_center_x, curve_strength):
+        """Refresh dynamic road limits without automatically centering the car."""
+        self.track_center_x = track_center_x
+        self.curve_strength = curve_strength
+        self._update_track_limits(track_center_x)
+        self.x = max(self.min_x, min(self.x, self.max_x))
+        self.off_road = (
+            self.x < self.road_min_x - settings.OFF_ROAD_TOLERANCE
+            or self.x > self.road_max_x + settings.OFF_ROAD_TOLERANCE
+        )
 
     @property
     def min_x(self):
-        half_width = (
-            settings.PLAYER_BODY_WIDTH / 2 + settings.PLAYER_WHEEL_OVERHANG
-        )
-        return settings.ROAD_LEFT + half_width
+        """Leftmost center position allowed on the road's outer shoulder."""
+        return self.outer_min_x
 
     @property
     def max_x(self):
-        half_width = (
-            settings.PLAYER_BODY_WIDTH / 2 + settings.PLAYER_WHEEL_OVERHANG
-        )
-        return settings.ROAD_RIGHT - half_width
+        """Rightmost center position allowed on the road's outer shoulder."""
+        return self.outer_max_x
 
     def get_control_input(self):
         """Read continuous steering, acceleration, and braking input."""
@@ -55,8 +79,8 @@ class Player:
             nitro_pressed,
         )
 
-    def update_controls(self, delta_time):
-        """Apply held controls using the existing frame-independent behavior."""
+    def update_controls(self, delta_time, track_center_x, curve_strength):
+        """Apply held controls, curve pressure, and surface effects."""
         (
             steering_direction,
             accelerate_pressed,
@@ -64,13 +88,26 @@ class Player:
             nitro_pressed,
         ) = self.get_control_input()
 
+        self.sync_track_state(track_center_x, curve_strength)
+
         self.x += steering_direction * settings.PLAYER_STEER_SPEED * delta_time
-        self.x = max(self.min_x, min(self.x, self.max_x))
+
+        # A positive centerline slope is a right bend, so its outside pressure
+        # acts left. Squaring speed makes braking meaningfully ease the turn.
+        self.curve_force = (
+            -curve_strength
+            * self.speed
+            * self.speed
+            * settings.CURVE_FORCE_MULTIPLIER
+        )
+        self.x += self.curve_force * delta_time
+        self.sync_track_state(track_center_x, curve_strength)
 
         self.nitro_active = (
             accelerate_pressed
             and nitro_pressed
             and not brake_pressed
+            and not self.off_road
             and self.nitro_amount > 0.0
         )
 
@@ -81,6 +118,9 @@ class Player:
             self.speed += settings.NITRO_ACCELERATION * delta_time
             self.speed = min(self.speed, settings.NITRO_MAX_SPEED)
         elif accelerate_pressed:
+            acceleration = settings.ACCELERATION
+            if self.off_road:
+                acceleration *= settings.OFF_ROAD_ACCELERATION_MULTIPLIER
             if self.speed > settings.PLAYER_MAX_SPEED:
                 self.speed = max(
                     settings.PLAYER_MAX_SPEED,
@@ -90,7 +130,7 @@ class Player:
             else:
                 self.speed = min(
                     settings.PLAYER_MAX_SPEED,
-                    self.speed + settings.ACCELERATION * delta_time,
+                    self.speed + acceleration * delta_time,
                 )
         elif self.speed > settings.PLAYER_MAX_SPEED:
             self.speed = max(
@@ -104,6 +144,14 @@ class Player:
         self.speed = max(
             settings.MIN_SPEED, min(self.speed, settings.NITRO_MAX_SPEED)
         )
+
+        # Grass/shoulder drag removes high speed but still lets the player
+        # accelerate gently up to a recovery pace and steer back onto the road.
+        if self.off_road and self.speed > settings.OFF_ROAD_SPEED_LIMIT:
+            self.speed = max(
+                settings.OFF_ROAD_SPEED_LIMIT,
+                self.speed - settings.OFF_ROAD_DECELERATION * delta_time,
+            )
 
         if self.nitro_active:
             self.nitro_amount = max(
