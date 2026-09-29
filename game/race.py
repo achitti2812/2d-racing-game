@@ -16,8 +16,9 @@ from screens.results import draw_results
 class Race:
     """Coordinate the player, opponents, road, and current race flow."""
 
-    def __init__(self, track_config, random_seed=None):
+    def __init__(self, track_config, car_config, random_seed=None):
         self.track_config = track_config
+        self.car_config = car_config
         self.random_source = random.Random(random_seed)
         self.title_font = pygame.font.Font(None, 29)
         self.label_font = pygame.font.Font(None, 22)
@@ -35,7 +36,7 @@ class Race:
         """Reset all race-specific state without reinitializing Pygame."""
         self.state = settings.COUNTDOWN
         self.track = Track(self.track_config)
-        self.player = Player()
+        self.player = Player(self.car_config)
         self.player.sync_track_state(
             self.track.get_center_x(self.player.distance),
             self.track.get_curve_strength(self.player.distance),
@@ -59,6 +60,8 @@ class Race:
             self.reset_race()
         elif event.key == pygame.K_t:
             return settings.TRACK_SELECTION
+        elif event.key == pygame.K_c:
+            return settings.CAR_SELECTION
         return None
 
     def update(self, delta_time):
@@ -292,19 +295,25 @@ class Race:
                 self.player.finish_position,
                 self.player.finish_time,
                 self.track.name,
+                self.car_config.name,
             )
 
     def _draw_hud(self, surface):
-        panel = pygame.Surface((190, 216), pygame.SRCALPHA)
+        panel = pygame.Surface((200, 234), pygame.SRCALPHA)
         panel.fill((10, 12, 14, 175))
         surface.blit(panel, (18, 18))
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 10", True, (190, 206, 196)
+            "STEP 11", True, (190, 206, 196)
         )
         track_label = self.control_font.render(
             self.track.name, True, (217, 224, 219)
+        )
+        car_label = self.control_font.render(
+            f"CAR: {self.car_config.name}",
+            True,
+            self.car_config.accent_color,
         )
         speed_label = self.label_font.render(
             f"SPEED: {round(self.player.speed)}", True, settings.WHITE
@@ -327,13 +336,14 @@ class Race:
         surface.blit(title, (30, 27))
         surface.blit(step_label, (30, 52))
         surface.blit(track_label, (30, 73))
-        surface.blit(speed_label, (30, 92))
-        surface.blit(position_label, (30, 115))
-        surface.blit(progress_label, (30, 138))
-        surface.blit(time_label, (30, 161))
-        surface.blit(nitro_label, (30, 184))
+        surface.blit(car_label, (30, 89))
+        surface.blit(speed_label, (30, 108))
+        surface.blit(position_label, (30, 131))
+        surface.blit(progress_label, (30, 154))
+        surface.blit(time_label, (30, 177))
+        surface.blit(nitro_label, (30, 200))
 
-        meter_rect = pygame.Rect(30, 205, 155, 12)
+        meter_rect = pygame.Rect(30, 221, 165, 12)
         pygame.draw.rect(
             surface, settings.NITRO_METER_BACKGROUND, meter_rect
         )
@@ -388,8 +398,8 @@ class Race:
                 (off_road_label.get_width() + 16, 27), pygame.SRCALPHA
             )
             off_road_panel.fill((35, 23, 10, 190))
-            surface.blit(off_road_panel, (18, 240))
-            surface.blit(off_road_label, (26, 244))
+            surface.blit(off_road_panel, (18, 258))
+            surface.blit(off_road_label, (26, 262))
 
     def _draw_track_debug(self, surface):
         """Show compact curved-track handling data when explicitly enabled."""
@@ -407,7 +417,7 @@ class Race:
         panel_height = sum(line.get_height() for line in rendered) + 12
         panel = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         panel.fill((8, 10, 12, 185))
-        panel_y = 276
+        panel_y = 294
         surface.blit(panel, (18, panel_y))
         text_y = panel_y + 6
         for line in rendered:

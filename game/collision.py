@@ -16,7 +16,8 @@ def handle_collision(player, opponent):
     """Apply the unchanged speed loss, knockback, and protection timers."""
     player.speed *= settings.COLLISION_SPEED_RETENTION
     player.speed = max(
-        settings.MIN_SPEED, min(player.speed, settings.MAX_SPEED)
+        settings.MIN_SPEED,
+        min(player.speed, player.car_config.max_speed),
     )
 
     if player.x < opponent.x:

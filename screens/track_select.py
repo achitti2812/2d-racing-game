@@ -33,7 +33,7 @@ class TrackSelectScreen:
             return None
         return self.track_configs[selected_index]
 
-    def draw(self, surface):
+    def draw(self, surface, selected_car=None):
         surface.fill((14, 18, 23))
 
         title = self.title_font.render("SELECT TRACK", True, settings.WHITE)
@@ -53,10 +53,11 @@ class TrackSelectScreen:
         for index, track_config in enumerate(self.track_configs, start=1):
             self._draw_track_card(surface, index, track_config)
 
+        footer_text = "Temporary Step 11 development selector"
+        if selected_car is not None:
+            footer_text = f"SELECTED CAR: {selected_car.name}"
         footer = self.description_font.render(
-            "Temporary Step 10 development selector",
-            True,
-            (131, 143, 151),
+            footer_text, True, (159, 174, 183)
         )
         surface.blit(
             footer,

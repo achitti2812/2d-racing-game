@@ -8,7 +8,8 @@ from game import settings
 class Player:
     """The human-controlled race car."""
 
-    def __init__(self):
+    def __init__(self, car_config):
+        self.car_config = car_config
         self.x = settings.PLAYER_START_X
         self.y = settings.PLAYER_Y
         self.speed = settings.MIN_SPEED
@@ -18,7 +19,7 @@ class Player:
         self.finish_position = None
         self.collision_cooldown = 0.0
         self.crash_message_timer = 0.0
-        self.nitro_capacity = settings.NITRO_CAPACITY
+        self.nitro_capacity = car_config.nitro_capacity
         self.nitro_amount = self.nitro_capacity
         self.nitro_active = False
         self.nitro_recharge_delay = 0.0
@@ -90,7 +91,11 @@ class Player:
 
         self.sync_track_state(track_center_x, curve_strength)
 
-        self.x += steering_direction * settings.PLAYER_STEER_SPEED * delta_time
+        self.x += (
+            steering_direction
+            * self.car_config.steering_speed
+            * delta_time
+        )
 
         # A positive centerline slope is a right bend, so its outside pressure
         # acts left. Squaring speed makes braking meaningfully ease the turn.
@@ -99,6 +104,7 @@ class Player:
             * self.speed
             * self.speed
             * settings.CURVE_FORCE_MULTIPLIER
+            * self.car_config.curve_pressure_multiplier
         )
         self.x += self.curve_force * delta_time
         self.sync_track_state(track_center_x, curve_strength)
@@ -113,44 +119,46 @@ class Player:
 
         # Braking takes priority over both normal acceleration and nitro.
         if brake_pressed:
-            self.speed -= settings.BRAKE_DECELERATION * delta_time
+            self.speed -= self.car_config.brake_deceleration * delta_time
         elif self.nitro_active:
-            self.speed += settings.NITRO_ACCELERATION * delta_time
-            self.speed = min(self.speed, settings.NITRO_MAX_SPEED)
+            self.speed += self.car_config.nitro_acceleration * delta_time
+            self.speed = min(self.speed, self.car_config.nitro_max_speed)
         elif accelerate_pressed:
-            acceleration = settings.ACCELERATION
+            acceleration = self.car_config.acceleration
             if self.off_road:
-                acceleration *= settings.OFF_ROAD_ACCELERATION_MULTIPLIER
-            if self.speed > settings.PLAYER_MAX_SPEED:
+                acceleration *= self.car_config.offroad_acceleration_multiplier
+            if self.speed > self.car_config.max_speed:
                 self.speed = max(
-                    settings.PLAYER_MAX_SPEED,
+                    self.car_config.max_speed,
                     self.speed
                     - settings.NITRO_OVERSPEED_DECELERATION * delta_time,
                 )
             else:
                 self.speed = min(
-                    settings.PLAYER_MAX_SPEED,
+                    self.car_config.max_speed,
                     self.speed + acceleration * delta_time,
                 )
-        elif self.speed > settings.PLAYER_MAX_SPEED:
+        elif self.speed > self.car_config.max_speed:
             self.speed = max(
-                settings.PLAYER_MAX_SPEED,
+                self.car_config.max_speed,
                 self.speed
                 - settings.NITRO_OVERSPEED_DECELERATION * delta_time,
             )
         else:
-            self.speed -= settings.COAST_DECELERATION * delta_time
+            self.speed -= self.car_config.coast_deceleration * delta_time
 
         self.speed = max(
-            settings.MIN_SPEED, min(self.speed, settings.NITRO_MAX_SPEED)
+            settings.MIN_SPEED,
+            min(self.speed, self.car_config.nitro_max_speed),
         )
 
         # Grass/shoulder drag removes high speed but still lets the player
         # accelerate gently up to a recovery pace and steer back onto the road.
-        if self.off_road and self.speed > settings.OFF_ROAD_SPEED_LIMIT:
+        if self.off_road and self.speed > self.car_config.offroad_speed_limit:
             self.speed = max(
-                settings.OFF_ROAD_SPEED_LIMIT,
-                self.speed - settings.OFF_ROAD_DECELERATION * delta_time,
+                self.car_config.offroad_speed_limit,
+                self.speed
+                - self.car_config.offroad_deceleration * delta_time,
             )
 
         if self.nitro_active:
@@ -246,10 +254,19 @@ class Player:
         car_top = round(self.y)
         car_left = car_center_x - settings.PLAYER_BODY_WIDTH // 2
         body_fill_color = (
-            settings.CAR_FLASH_LIGHT if is_flashing else settings.CAR_RED_DARK
+            settings.CAR_FLASH_LIGHT
+            if is_flashing
+            else self.car_config.body_color
         )
         body_outline_color = (
-            settings.CAR_FLASH_OUTLINE if is_flashing else settings.CAR_RED
+            settings.CAR_FLASH_OUTLINE
+            if is_flashing
+            else self.car_config.accent_color
+        )
+        accent_color = (
+            settings.CAR_FLASH_OUTLINE
+            if is_flashing
+            else self.car_config.accent_color
         )
 
         if self.nitro_active:
@@ -289,6 +306,20 @@ class Player:
         ]
         pygame.draw.polygon(surface, body_fill_color, body_points)
         pygame.draw.polygon(surface, body_outline_color, body_points, width=4)
+
+        # A simple center stripe reinforces each selected car's accent color.
+        pygame.draw.rect(
+            surface,
+            accent_color,
+            (car_center_x - 4, car_top + 5, 8, 25),
+            border_radius=2,
+        )
+        pygame.draw.rect(
+            surface,
+            accent_color,
+            (car_center_x - 4, car_top + 103, 8, 21),
+            border_radius=2,
+        )
 
         pygame.draw.polygon(
             surface,

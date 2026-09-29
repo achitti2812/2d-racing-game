@@ -20,6 +20,7 @@ def draw_results(
     player_finish_position,
     player_finish_time,
     track_name,
+    car_name,
 ):
     """Draw the complete finishing order and navigation prompts."""
     overlay = pygame.Surface(
@@ -45,10 +46,18 @@ def draw_results(
     )
     surface.blit(
         track_text,
-        track_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 165)),
+        track_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 158)),
     )
 
-    order_y = 215
+    car_text = small_font.render(
+        f"CAR: {car_name}", True, (190, 206, 196)
+    )
+    surface.blit(
+        car_text,
+        car_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 184)),
+    )
+
+    order_y = 225
     for index, racer_id in enumerate(finishing_order, start=1):
         color = (
             (255, 220, 92) if racer_id == "PLAYER" else settings.WHITE
@@ -78,6 +87,9 @@ def draw_results(
     track_select_text = small_font.render(
         "T - Track Selection", True, settings.WHITE
     )
+    car_select_text = small_font.render(
+        "C - Car Selection", True, settings.WHITE
+    )
 
     surface.blit(
         finish_position_text,
@@ -93,11 +105,17 @@ def draw_results(
     )
     surface.blit(
         restart_text,
-        restart_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 555)),
+        restart_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 535)),
     )
     surface.blit(
         track_select_text,
         track_select_text.get_rect(
-            center=(settings.SCREEN_WIDTH // 2, 585)
+            center=(settings.SCREEN_WIDTH // 2, 565)
+        ),
+    )
+    surface.blit(
+        car_select_text,
+        car_select_text.get_rect(
+            center=(settings.SCREEN_WIDTH // 2, 595)
         ),
     )
