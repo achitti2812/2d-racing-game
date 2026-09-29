@@ -18,6 +18,10 @@ class Player:
         self.finish_position = None
         self.collision_cooldown = 0.0
         self.crash_message_timer = 0.0
+        self.nitro_capacity = settings.NITRO_CAPACITY
+        self.nitro_amount = self.nitro_capacity
+        self.nitro_active = False
+        self.nitro_recharge_delay = 0.0
 
     @property
     def min_x(self):
@@ -43,27 +47,87 @@ class Player:
 
         accelerate_pressed = keys[pygame.K_w] or keys[pygame.K_UP]
         brake_pressed = keys[pygame.K_s] or keys[pygame.K_DOWN]
-        return steering_direction, accelerate_pressed, brake_pressed
+        nitro_pressed = keys[pygame.K_SPACE]
+        return (
+            steering_direction,
+            accelerate_pressed,
+            brake_pressed,
+            nitro_pressed,
+        )
 
     def update_controls(self, delta_time):
         """Apply held controls using the existing frame-independent behavior."""
-        steering_direction, accelerate_pressed, brake_pressed = (
-            self.get_control_input()
-        )
+        (
+            steering_direction,
+            accelerate_pressed,
+            brake_pressed,
+            nitro_pressed,
+        ) = self.get_control_input()
 
         self.x += steering_direction * settings.PLAYER_STEER_SPEED * delta_time
         self.x = max(self.min_x, min(self.x, self.max_x))
 
-        if accelerate_pressed and not brake_pressed:
-            self.speed += settings.ACCELERATION * delta_time
-        elif brake_pressed and not accelerate_pressed:
+        self.nitro_active = (
+            accelerate_pressed
+            and nitro_pressed
+            and not brake_pressed
+            and self.nitro_amount > 0.0
+        )
+
+        # Braking takes priority over both normal acceleration and nitro.
+        if brake_pressed:
             self.speed -= settings.BRAKE_DECELERATION * delta_time
-        elif not accelerate_pressed and not brake_pressed:
+        elif self.nitro_active:
+            self.speed += settings.NITRO_ACCELERATION * delta_time
+            self.speed = min(self.speed, settings.NITRO_MAX_SPEED)
+        elif accelerate_pressed:
+            if self.speed > settings.PLAYER_MAX_SPEED:
+                self.speed = max(
+                    settings.PLAYER_MAX_SPEED,
+                    self.speed
+                    - settings.NITRO_OVERSPEED_DECELERATION * delta_time,
+                )
+            else:
+                self.speed = min(
+                    settings.PLAYER_MAX_SPEED,
+                    self.speed + settings.ACCELERATION * delta_time,
+                )
+        elif self.speed > settings.PLAYER_MAX_SPEED:
+            self.speed = max(
+                settings.PLAYER_MAX_SPEED,
+                self.speed
+                - settings.NITRO_OVERSPEED_DECELERATION * delta_time,
+            )
+        else:
             self.speed -= settings.COAST_DECELERATION * delta_time
 
         self.speed = max(
-            settings.MIN_SPEED, min(self.speed, settings.MAX_SPEED)
+            settings.MIN_SPEED, min(self.speed, settings.NITRO_MAX_SPEED)
         )
+
+        if self.nitro_active:
+            self.nitro_amount = max(
+                0.0,
+                self.nitro_amount - settings.NITRO_DRAIN_RATE * delta_time,
+            )
+            self.nitro_recharge_delay = settings.NITRO_RECHARGE_DELAY
+            if self.nitro_amount <= 0.0:
+                self.nitro_active = False
+        else:
+            self.nitro_recharge_delay = max(
+                0.0, self.nitro_recharge_delay - delta_time
+            )
+            # Holding Space on its own cannot propel, drain, or recharge.
+            if self.nitro_recharge_delay <= 0.0 and not nitro_pressed:
+                self.nitro_amount = min(
+                    self.nitro_capacity,
+                    self.nitro_amount
+                    + settings.NITRO_RECHARGE_RATE * delta_time,
+                )
+
+    def stop_nitro(self):
+        """Immediately disable boost without changing the remaining amount."""
+        self.nitro_active = False
 
     def update_collision_timers(self, delta_time):
         self.collision_cooldown = max(
@@ -92,6 +156,34 @@ class Player:
             settings.PLAYER_HITBOX_HEIGHT,
         )
 
+    def _draw_nitro_exhaust(self, surface, car_center_x, car_top):
+        """Draw simple twin exhaust flames behind the car while boosting."""
+        exhaust_y = car_top + settings.PLAYER_HEIGHT - 2
+        for horizontal_offset in (-18, 18):
+            exhaust_x = car_center_x + horizontal_offset
+            pygame.draw.polygon(
+                surface,
+                settings.NITRO_BLUE,
+                [
+                    (exhaust_x - 6, exhaust_y),
+                    (exhaust_x + 6, exhaust_y),
+                    (exhaust_x + 3, exhaust_y + 20),
+                    (exhaust_x, exhaust_y + 30),
+                    (exhaust_x - 3, exhaust_y + 20),
+                ],
+            )
+            pygame.draw.polygon(
+                surface,
+                settings.NITRO_CYAN,
+                [
+                    (exhaust_x - 3, exhaust_y),
+                    (exhaust_x + 3, exhaust_y),
+                    (exhaust_x + 1, exhaust_y + 13),
+                    (exhaust_x, exhaust_y + 21),
+                    (exhaust_x - 1, exhaust_y + 13),
+                ],
+            )
+
     def draw(self, surface):
         """Draw the existing top-down player car design."""
         is_flashing = (
@@ -111,6 +203,9 @@ class Player:
         body_outline_color = (
             settings.CAR_FLASH_OUTLINE if is_flashing else settings.CAR_RED
         )
+
+        if self.nitro_active:
+            self._draw_nitro_exhaust(surface, car_center_x, car_top)
 
         wheel_width = 11
         wheel_height = 31

@@ -171,6 +171,7 @@ class Race:
 
             if racer_id == "PLAYER":
                 self.player.finished = True
+                self.player.stop_nitro()
                 self.player.distance = settings.RACE_DISTANCE
                 self.player.finish_time = crossing_time
                 self.player.finish_position = finish_position
@@ -263,13 +264,13 @@ class Race:
             )
 
     def _draw_hud(self, surface):
-        panel = pygame.Surface((175, 157), pygame.SRCALPHA)
+        panel = pygame.Surface((175, 194), pygame.SRCALPHA)
         panel.fill((10, 12, 14, 175))
         surface.blit(panel, (18, 18))
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 7", True, (190, 206, 196)
+            "STEP 8", True, (190, 206, 196)
         )
         speed_label = self.label_font.render(
             f"SPEED: {round(self.player.speed)}", True, settings.WHITE
@@ -287,6 +288,7 @@ class Race:
             True,
             settings.WHITE,
         )
+        nitro_label = self.label_font.render("NITRO", True, settings.WHITE)
 
         surface.blit(title, (30, 27))
         surface.blit(step_label, (30, 52))
@@ -294,9 +296,30 @@ class Race:
         surface.blit(position_label, (30, 98))
         surface.blit(progress_label, (30, 121))
         surface.blit(time_label, (30, 144))
+        surface.blit(nitro_label, (30, 167))
+
+        meter_rect = pygame.Rect(30, 188, 140, 12)
+        pygame.draw.rect(
+            surface, settings.NITRO_METER_BACKGROUND, meter_rect
+        )
+        nitro_ratio = self.player.nitro_amount / self.player.nitro_capacity
+        fill_width = round((meter_rect.width - 4) * nitro_ratio)
+        if fill_width > 0:
+            fill_color = (
+                settings.NITRO_METER_ACTIVE
+                if self.player.nitro_active
+                else settings.NITRO_METER_FILL
+            )
+            pygame.draw.rect(
+                surface,
+                fill_color,
+                (meter_rect.x + 2, meter_rect.y + 2, fill_width, 8),
+            )
+        pygame.draw.rect(surface, settings.WHITE, meter_rect, width=2)
 
         control_text = (
-            "W/UP ACCELERATE   S/DOWN BRAKE   A/D OR LEFT/RIGHT STEER"
+            "W/UP ACCELERATE   S/DOWN BRAKE   A/D OR LEFT/RIGHT STEER   "
+            "SPACE NITRO"
         )
         control_hint = self.control_font.render(
             control_text, True, settings.WHITE
