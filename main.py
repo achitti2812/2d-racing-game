@@ -4,6 +4,8 @@ import pygame
 
 from game import settings
 from game.race import Race
+from game.tracks import TRACKS
+from screens.track_select import TrackSelectScreen
 
 
 def main():
@@ -13,7 +15,8 @@ def main():
     )
     pygame.display.set_caption("2D Racing Game")
     clock = pygame.time.Clock()
-    race = Race()
+    track_select = TrackSelectScreen(TRACKS)
+    race = None
     running = True
 
     try:
@@ -23,14 +26,23 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif race is None:
+                    selected_track = track_select.handle_event(event)
+                    if selected_track is not None:
+                        race = Race(selected_track)
                 else:
-                    race.handle_event(event)
+                    requested_state = race.handle_event(event)
+                    if requested_state == settings.TRACK_SELECTION:
+                        race = None
 
             if not running:
                 break
 
-            race.update(delta_time)
-            race.draw(screen)
+            if race is None:
+                track_select.draw(screen)
+            else:
+                race.update(delta_time)
+                race.draw(screen)
             pygame.display.flip()
     finally:
         pygame.quit()

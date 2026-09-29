@@ -16,7 +16,8 @@ from screens.results import draw_results
 class Race:
     """Coordinate the player, opponents, road, and current race flow."""
 
-    def __init__(self, random_seed=None):
+    def __init__(self, track_config, random_seed=None):
+        self.track_config = track_config
         self.random_source = random.Random(random_seed)
         self.title_font = pygame.font.Font(None, 29)
         self.label_font = pygame.font.Font(None, 22)
@@ -33,7 +34,7 @@ class Race:
     def reset_race(self):
         """Reset all race-specific state without reinitializing Pygame."""
         self.state = settings.COUNTDOWN
-        self.track = Track()
+        self.track = Track(self.track_config)
         self.player = Player()
         self.player.sync_track_state(
             self.track.get_center_x(self.player.distance),
@@ -52,12 +53,13 @@ class Race:
 
     def handle_event(self, event):
         """Handle race-specific events; the application handles quitting."""
-        if (
-            event.type == pygame.KEYDOWN
-            and event.key == pygame.K_r
-            and self.state == settings.FINISHED
-        ):
+        if event.type != pygame.KEYDOWN or self.state != settings.FINISHED:
+            return None
+        if event.key == pygame.K_r:
             self.reset_race()
+        elif event.key == pygame.K_t:
+            return settings.TRACK_SELECTION
+        return None
 
     def update(self, delta_time):
         if self.state == settings.COUNTDOWN:
@@ -169,13 +171,13 @@ class Race:
         )
 
         for racer_id, already_finished, new_distance, old_distance in racers:
-            if already_finished or new_distance < settings.RACE_DISTANCE:
+            if already_finished or new_distance < self.track.race_distance:
                 continue
 
             distance_this_frame = new_distance - old_distance
             if distance_this_frame > 0.0:
                 crossing_fraction = (
-                    settings.RACE_DISTANCE - old_distance
+                    self.track.race_distance - old_distance
                 ) / distance_this_frame
                 crossing_fraction = max(
                     0.0, min(crossing_fraction, 1.0)
@@ -198,7 +200,7 @@ class Race:
             if racer_id == "PLAYER":
                 self.player.finished = True
                 self.player.stop_nitro()
-                self.player.distance = settings.RACE_DISTANCE
+                self.player.distance = self.track.race_distance
                 self.player.finish_time = crossing_time
                 self.player.finish_position = finish_position
                 self.player.collision_cooldown = 0.0
@@ -210,7 +212,7 @@ class Race:
                     if car.identifier == racer_id
                 )
                 opponent.finished = True
-                opponent.distance = settings.RACE_DISTANCE
+                opponent.distance = self.track.race_distance
                 opponent.current_speed = 0.0
                 opponent.finish_time = crossing_time
                 opponent.finish_position = finish_position
@@ -240,7 +242,7 @@ class Race:
     def progress(self):
         return max(
             0.0,
-            min(self.player.distance / settings.RACE_DISTANCE, 1.0),
+            min(self.player.distance / self.track.race_distance, 1.0),
         ) * 100.0
 
     @property
@@ -289,16 +291,20 @@ class Race:
                 self.finishing_order,
                 self.player.finish_position,
                 self.player.finish_time,
+                self.track.name,
             )
 
     def _draw_hud(self, surface):
-        panel = pygame.Surface((175, 194), pygame.SRCALPHA)
+        panel = pygame.Surface((190, 216), pygame.SRCALPHA)
         panel.fill((10, 12, 14, 175))
         surface.blit(panel, (18, 18))
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 9", True, (190, 206, 196)
+            "STEP 10", True, (190, 206, 196)
+        )
+        track_label = self.control_font.render(
+            self.track.name, True, (217, 224, 219)
         )
         speed_label = self.label_font.render(
             f"SPEED: {round(self.player.speed)}", True, settings.WHITE
@@ -320,13 +326,14 @@ class Race:
 
         surface.blit(title, (30, 27))
         surface.blit(step_label, (30, 52))
-        surface.blit(speed_label, (30, 75))
-        surface.blit(position_label, (30, 98))
-        surface.blit(progress_label, (30, 121))
-        surface.blit(time_label, (30, 144))
-        surface.blit(nitro_label, (30, 167))
+        surface.blit(track_label, (30, 73))
+        surface.blit(speed_label, (30, 92))
+        surface.blit(position_label, (30, 115))
+        surface.blit(progress_label, (30, 138))
+        surface.blit(time_label, (30, 161))
+        surface.blit(nitro_label, (30, 184))
 
-        meter_rect = pygame.Rect(30, 188, 140, 12)
+        meter_rect = pygame.Rect(30, 205, 155, 12)
         pygame.draw.rect(
             surface, settings.NITRO_METER_BACKGROUND, meter_rect
         )
@@ -381,8 +388,8 @@ class Race:
                 (off_road_label.get_width() + 16, 27), pygame.SRCALPHA
             )
             off_road_panel.fill((35, 23, 10, 190))
-            surface.blit(off_road_panel, (18, 218))
-            surface.blit(off_road_label, (26, 222))
+            surface.blit(off_road_panel, (18, 240))
+            surface.blit(off_road_label, (26, 244))
 
     def _draw_track_debug(self, surface):
         """Show compact curved-track handling data when explicitly enabled."""
@@ -400,7 +407,7 @@ class Race:
         panel_height = sum(line.get_height() for line in rendered) + 12
         panel = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
         panel.fill((8, 10, 12, 185))
-        panel_y = 254
+        panel_y = 276
         surface.blit(panel, (18, panel_y))
         text_y = panel_y + 6
         for line in rendered:

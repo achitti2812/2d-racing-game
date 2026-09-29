@@ -1,4 +1,4 @@
-"""Temporary Step 6 race-results overlay."""
+"""Temporary race-results overlay."""
 
 import pygame
 
@@ -19,8 +19,9 @@ def draw_results(
     finishing_order,
     player_finish_position,
     player_finish_time,
+    track_name,
 ):
-    """Draw the complete finishing order and restart prompt."""
+    """Draw the complete finishing order and navigation prompts."""
     overlay = pygame.Surface(
         (settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT), pygame.SRCALPHA
     )
@@ -39,7 +40,15 @@ def draw_results(
         title.get_rect(center=(settings.SCREEN_WIDTH // 2, 125)),
     )
 
-    order_y = 205
+    track_text = small_font.render(
+        f"TRACK: {track_name}", True, (190, 206, 196)
+    )
+    surface.blit(
+        track_text,
+        track_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 165)),
+    )
+
+    order_y = 215
     for index, racer_id in enumerate(finishing_order, start=1):
         color = (
             (255, 220, 92) if racer_id == "PLAYER" else settings.WHITE
@@ -64,7 +73,10 @@ def draw_results(
         f"YOUR TIME: {player_finish_time:.1f}s", True, settings.WHITE
     )
     restart_text = small_font.render(
-        "Press R to Race Again", True, settings.WHITE
+        "R - Race Again", True, settings.WHITE
+    )
+    track_select_text = small_font.render(
+        "T - Track Selection", True, settings.WHITE
     )
 
     surface.blit(
@@ -81,5 +93,11 @@ def draw_results(
     )
     surface.blit(
         restart_text,
-        restart_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 560)),
+        restart_text.get_rect(center=(settings.SCREEN_WIDTH // 2, 555)),
+    )
+    surface.blit(
+        track_select_text,
+        track_select_text.get_rect(
+            center=(settings.SCREEN_WIDTH // 2, 585)
+        ),
     )

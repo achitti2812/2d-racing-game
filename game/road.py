@@ -19,13 +19,13 @@ class Road:
         self._draw_race_lines(surface, camera_distance)
 
     def _draw_terrain(self, surface):
-        surface.fill(settings.TERRAIN_COLOR)
+        surface.fill(self.track.config.terrain_color)
 
         stripe_width = 24
         for x in range(0, settings.SCREEN_WIDTH, stripe_width * 2):
             pygame.draw.rect(
                 surface,
-                settings.TERRAIN_STRIPE_COLOR,
+                self.track.config.terrain_stripe_color,
                 (x, 0, stripe_width, settings.SCREEN_HEIGHT),
             )
 
@@ -46,13 +46,13 @@ class Road:
         return samples
 
     def _draw_highway(self, surface, samples):
-        shoulder_width = 12
+        shoulder_width = settings.ROAD_SHOULDER_WIDTH
         for first, second in zip(samples, samples[1:]):
             y1, left1, right1 = first
             y2, left2, right2 = second
             pygame.draw.polygon(
                 surface,
-                settings.ROAD_SHOULDER_COLOR,
+                self.track.config.shoulder_color,
                 [
                     (left1 - shoulder_width, y1),
                     (right1 + shoulder_width, y1),
@@ -133,13 +133,13 @@ class Road:
             settings.START_LINE_DISTANCE, camera_distance
         )
         finish_line_y = self.track.world_distance_to_screen_y(
-            settings.RACE_DISTANCE, camera_distance
+            self.track.race_distance, camera_distance
         )
         self._draw_checkered_line(
             surface, start_line_y, settings.START_LINE_DISTANCE
         )
         self._draw_checkered_line(
-            surface, finish_line_y, settings.RACE_DISTANCE
+            surface, finish_line_y, self.track.race_distance
         )
 
     def _draw_checkered_line(self, surface, center_y, world_distance):

@@ -289,7 +289,7 @@ class Opponent:
 
 
 def create_opponents(track, random_source=None):
-    """Create the three personalities in the unchanged starting formation."""
+    """Create three personalities scaled by the selected track difficulty."""
     if random_source is None:
         random_source = random.Random()
 
@@ -340,7 +340,35 @@ def create_opponents(track, random_source=None):
             "accent_color": (236, 224, 247),
         },
     ]
-    return [
-        Opponent(random_source=random_source, track=track, **spec)
-        for spec in opponent_specs
-    ]
+    difficulty = track.config.ai_difficulty
+    opponents = []
+    for base_spec in opponent_specs:
+        spec = dict(base_spec)
+        spec["max_speed"] *= difficulty.max_speed_multiplier
+        spec["acceleration"] *= difficulty.acceleration_multiplier
+        spec["deceleration"] *= difficulty.deceleration_multiplier
+        spec["min_target_factor"] = max(
+            settings.AI_MIN_TARGET_FACTOR,
+            min(
+                settings.AI_MAX_TARGET_FACTOR,
+                spec["min_target_factor"]
+                + difficulty.target_factor_adjustment,
+            ),
+        )
+        spec["max_target_factor"] = max(
+            spec["min_target_factor"],
+            min(
+                settings.AI_MAX_TARGET_FACTOR,
+                spec["max_target_factor"]
+                + difficulty.target_factor_adjustment,
+            ),
+        )
+        spec["decision_time_range"] = tuple(
+            decision_time * difficulty.decision_time_multiplier
+            for decision_time in spec["decision_time_range"]
+        )
+        spec["curve_caution"] *= difficulty.curve_caution_multiplier
+        opponents.append(
+            Opponent(random_source=random_source, track=track, **spec)
+        )
+    return opponents
