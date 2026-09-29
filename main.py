@@ -30,12 +30,26 @@ PLAYER_Y = SCREEN_HEIGHT - 172
 OPPONENT_WIDTH = 62
 OPPONENT_HEIGHT = 116
 
+# Fair body-sized collision boxes exclude wheels and small decorations.
+PLAYER_HITBOX_WIDTH = 56
+PLAYER_HITBOX_HEIGHT = 118
+OPPONENT_HITBOX_WIDTH = 50
+OPPONENT_HITBOX_HEIGHT = 104
+SHOW_HITBOXES = False
+
 # Speed and acceleration settings (temporary game-speed units)
 MIN_SPEED = 0.0
 MAX_SPEED = 180.0
 ACCELERATION = 75.0
 BRAKE_DECELERATION = 120.0
 COAST_DECELERATION = 30.0
+
+# Arcade collision response
+COLLISION_SPEED_RETENTION = 0.45
+COLLISION_KNOCKBACK_DISTANCE = 58.0
+COLLISION_COOLDOWN_DURATION = 1.25
+CRASH_MESSAGE_DURATION = 0.8
+PLAYER_FLASH_INTERVAL = 0.18
 
 # Colors
 TERRAIN_COLOR = (27, 67, 42)
@@ -48,6 +62,8 @@ CAR_RED = (202, 42, 48)
 CAR_RED_DARK = (145, 25, 31)
 WINDOW_COLOR = (91, 145, 166)
 WINDOW_HIGHLIGHT = (153, 199, 214)
+CAR_FLASH_LIGHT = (255, 214, 214)
+CAR_FLASH_OUTLINE = (255, 245, 245)
 
 
 def draw_terrain(surface):
@@ -98,11 +114,13 @@ def draw_road(surface, dash_offset):
             dash_y += dash_cycle
 
 
-def draw_player_car(surface, player_x, player_y):
+def draw_player_car(surface, player_x, player_y, is_flashing=False):
     """Draw the top-down car at the supplied center-x and top-y position."""
     car_center_x = round(player_x)
     car_top = round(player_y)
     car_left = car_center_x - PLAYER_BODY_WIDTH // 2
+    body_fill_color = CAR_FLASH_LIGHT if is_flashing else CAR_RED_DARK
+    body_outline_color = CAR_FLASH_OUTLINE if is_flashing else CAR_RED
 
     # Wheels sit slightly outside the body so they remain visible from above.
     wheel_width = 11
@@ -135,8 +153,8 @@ def draw_player_car(surface, player_x, player_y):
         (car_left, car_top + PLAYER_HEIGHT - 12),
         (car_left, car_top + 28),
     ]
-    pygame.draw.polygon(surface, CAR_RED_DARK, body_points)
-    pygame.draw.polygon(surface, CAR_RED, body_points, width=4)
+    pygame.draw.polygon(surface, body_fill_color, body_points)
+    pygame.draw.polygon(surface, body_outline_color, body_points, width=4)
 
     # Front windshield, side windows, and rear window form the cabin.
     pygame.draw.polygon(
@@ -345,16 +363,58 @@ def calculate_player_position(player_distance, opponents):
     return opponents_ahead + 1
 
 
+def get_player_hitbox(player_x, player_y):
+    """Return a fair collision rectangle centered within the player's body."""
+    return pygame.Rect(
+        round(player_x - PLAYER_HITBOX_WIDTH / 2),
+        round(player_y + (PLAYER_HEIGHT - PLAYER_HITBOX_HEIGHT) / 2),
+        PLAYER_HITBOX_WIDTH,
+        PLAYER_HITBOX_HEIGHT,
+    )
+
+
+def get_opponent_hitbox(opponent):
+    """Return a fair collision rectangle centered within an opponent's body."""
+    return pygame.Rect(
+        round(opponent["x"] - OPPONENT_HITBOX_WIDTH / 2),
+        round(opponent["y"] + (OPPONENT_HEIGHT - OPPONENT_HITBOX_HEIGHT) / 2),
+        OPPONENT_HITBOX_WIDTH,
+        OPPONENT_HITBOX_HEIGHT,
+    )
+
+
+def handle_collision(
+    player_speed, player_x, opponent, player_min_x, player_max_x
+):
+    """Apply the speed loss and a small horizontal push away from a rival."""
+    player_speed *= COLLISION_SPEED_RETENTION
+    player_speed = max(MIN_SPEED, min(player_speed, MAX_SPEED))
+
+    if player_x < opponent["x"]:
+        knockback_direction = -1
+    elif player_x > opponent["x"]:
+        knockback_direction = 1
+    else:
+        # For a centered impact, choose the direction with more available road.
+        space_to_left = player_x - player_min_x
+        space_to_right = player_max_x - player_x
+        knockback_direction = -1 if space_to_left >= space_to_right else 1
+
+    player_x += knockback_direction * COLLISION_KNOCKBACK_DISTANCE
+    player_x = max(player_min_x, min(player_x, player_max_x))
+    return player_speed, player_x
+
+
 def draw_hud(
     surface, title_font, label_font, control_font, player_speed, player_position
 ):
-    """Draw the temporary Step 4 labels, speed, position, and control hint."""
+    """Draw the temporary Step 5 labels, speed, position, and control hint."""
     panel = pygame.Surface((165, 111), pygame.SRCALPHA)
     panel.fill((10, 12, 14, 175))
     surface.blit(panel, (18, 18))
 
     title = title_font.render("2D RACING", True, WHITE)
-    step_label = label_font.render("STEP 4", True, (190, 206, 196))
+    step_label = label_font.render("STEP 5", True, (190, 206, 196))
     speed_label = label_font.render(f"SPEED: {round(player_speed)}", True, WHITE)
     position_label = label_font.render(
         f"POSITION: {player_position}/4", True, WHITE
@@ -377,6 +437,15 @@ def draw_hud(
     surface.blit(control_hint, (hint_x + hint_padding, 18 + hint_padding))
 
 
+def draw_crash_message(surface, crash_font):
+    """Draw a short, high-contrast crash notification."""
+    crash_text = crash_font.render("CRASH!", True, (255, 82, 72))
+    crash_shadow = crash_font.render("CRASH!", True, BLACK)
+    crash_rect = crash_text.get_rect(center=(SCREEN_WIDTH // 2, 165))
+    surface.blit(crash_shadow, crash_rect.move(3, 3))
+    surface.blit(crash_text, crash_rect)
+
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -386,6 +455,7 @@ def main():
     title_font = pygame.font.Font(None, 29)
     label_font = pygame.font.Font(None, 22)
     control_font = pygame.font.Font(None, 18)
+    crash_font = pygame.font.Font(None, 52)
 
     running = True
     dash_offset = 0.0
@@ -393,6 +463,8 @@ def main():
     player_speed = MIN_SPEED
     player_distance = 0.0
     opponents = create_opponents()
+    collision_cooldown = 0.0
+    crash_message_timer = 0.0
 
     # Include the wheel overhang when keeping the whole visible car on the road.
     player_half_width = PLAYER_BODY_WIDTH / 2 + PLAYER_WHEEL_OVERHANG
@@ -408,6 +480,9 @@ def main():
                 if event.type == pygame.QUIT:
                     running = False
 
+            collision_cooldown = max(0.0, collision_cooldown - delta_time)
+            crash_message_timer = max(0.0, crash_message_timer - delta_time)
+
             steering_direction, accelerate_pressed, brake_pressed = get_control_input()
 
             player_x += steering_direction * PLAYER_STEER_SPEED * delta_time
@@ -417,19 +492,58 @@ def main():
                 player_speed, accelerate_pressed, brake_pressed, delta_time
             )
 
-            dash_offset = update_road(dash_offset, player_speed, delta_time)
             player_distance = update_race_distances(
                 player_distance, player_speed, opponents, delta_time
             )
             update_opponent_positions(opponents, player_distance)
             player_position = calculate_player_position(player_distance, opponents)
 
+            visible_opponents = [
+                opponent
+                for opponent in opponents
+                if -OPPONENT_HEIGHT - 20
+                <= opponent["y"]
+                <= SCREEN_HEIGHT + 20
+            ]
+            player_hitbox = get_player_hitbox(player_x, PLAYER_Y)
+            opponent_hitboxes = [
+                (opponent, get_opponent_hitbox(opponent))
+                for opponent in visible_opponents
+            ]
+
+            if collision_cooldown <= 0.0:
+                for opponent, opponent_hitbox in opponent_hitboxes:
+                    if player_hitbox.colliderect(opponent_hitbox):
+                        player_speed, player_x = handle_collision(
+                            player_speed,
+                            player_x,
+                            opponent,
+                            player_min_x,
+                            player_max_x,
+                        )
+                        collision_cooldown = COLLISION_COOLDOWN_DURATION
+                        crash_message_timer = CRASH_MESSAGE_DURATION
+                        player_hitbox = get_player_hitbox(player_x, PLAYER_Y)
+                        break
+
+            dash_offset = update_road(dash_offset, player_speed, delta_time)
+
             draw_terrain(screen)
             draw_road(screen, dash_offset)
-            for opponent in opponents:
-                if -OPPONENT_HEIGHT - 20 <= opponent["y"] <= SCREEN_HEIGHT + 20:
-                    draw_opponent_car(screen, opponent)
-            draw_player_car(screen, player_x, PLAYER_Y)
+            for opponent in visible_opponents:
+                draw_opponent_car(screen, opponent)
+
+            is_flashing = (
+                collision_cooldown > 0.0
+                and int(collision_cooldown / PLAYER_FLASH_INTERVAL) % 2 == 0
+            )
+            draw_player_car(screen, player_x, PLAYER_Y, is_flashing)
+
+            if SHOW_HITBOXES:
+                pygame.draw.rect(screen, (80, 255, 130), player_hitbox, 2)
+                for _, opponent_hitbox in opponent_hitboxes:
+                    pygame.draw.rect(screen, (255, 194, 73), opponent_hitbox, 2)
+
             draw_hud(
                 screen,
                 title_font,
@@ -438,6 +552,8 @@ def main():
                 player_speed,
                 player_position,
             )
+            if crash_message_timer > 0.0:
+                draw_crash_message(screen, crash_font)
 
             pygame.display.flip()
     finally:
