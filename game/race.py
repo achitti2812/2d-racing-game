@@ -1,5 +1,7 @@
 """Race coordination, state transitions, timing, HUD, and finish logic."""
 
+import random
+
 import pygame
 
 from game import settings
@@ -11,9 +13,10 @@ from screens.results import draw_results
 
 
 class Race:
-    """Coordinate the player, opponents, road, and Step 6 race flow."""
+    """Coordinate the player, opponents, road, and current race flow."""
 
-    def __init__(self):
+    def __init__(self, random_seed=None):
+        self.random_source = random.Random(random_seed)
         self.title_font = pygame.font.Font(None, 29)
         self.label_font = pygame.font.Font(None, 22)
         self.control_font = pygame.font.Font(None, 18)
@@ -22,13 +25,14 @@ class Race:
         self.results_title_font = pygame.font.Font(None, 54)
         self.results_font = pygame.font.Font(None, 34)
         self.results_small_font = pygame.font.Font(None, 26)
+        self.ai_debug_font = pygame.font.Font(None, 15)
         self.reset_race()
 
     def reset_race(self):
         """Reset all race-specific state without reinitializing Pygame."""
         self.state = settings.COUNTDOWN
         self.player = Player()
-        self.opponents = create_opponents()
+        self.opponents = create_opponents(self.random_source)
         self.road = Road()
         self.camera_distance = 0.0
         self.player_position = 4
@@ -72,6 +76,9 @@ class Race:
         else:
             self.player.coast_after_finish(delta_time)
             self.camera_distance += self.player.speed * delta_time
+
+        for opponent in self.opponents:
+            opponent.update_ai(self.player.distance, delta_time)
 
         previous_distances = self._update_race_distances(delta_time)
 
@@ -177,6 +184,7 @@ class Race:
                 )
                 opponent.finished = True
                 opponent.distance = settings.RACE_DISTANCE
+                opponent.current_speed = 0.0
                 opponent.finish_time = crossing_time
                 opponent.finish_position = finish_position
 
@@ -219,6 +227,8 @@ class Race:
         visible_opponents = self.visible_opponents
         for opponent in visible_opponents:
             opponent.draw(surface)
+            if settings.SHOW_AI_DEBUG:
+                opponent.draw_debug(surface, self.ai_debug_font)
         self.player.draw(surface)
 
         if settings.SHOW_HITBOXES:
@@ -259,7 +269,7 @@ class Race:
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 6", True, (190, 206, 196)
+            "STEP 7", True, (190, 206, 196)
         )
         speed_label = self.label_font.render(
             f"SPEED: {round(self.player.speed)}", True, settings.WHITE
