@@ -32,6 +32,9 @@ class CarSelectScreen:
         if event.type != pygame.KEYDOWN:
             return None
 
+        if event.key in (pygame.K_ESCAPE, pygame.K_b):
+            return settings.MAIN_MENU
+
         key_to_index = {
             pygame.K_1: 0,
             pygame.K_KP1: 0,
@@ -62,7 +65,7 @@ class CarSelectScreen:
             title.get_rect(center=(settings.SCREEN_WIDTH // 2, 52)),
         )
         subtitle = self.hint_font.render(
-            "Press 1, 2, or 3 to continue to track selection",
+            "1 / 2 / 3 - Select    ESC / B - Main Menu",
             True,
             (182, 194, 202),
         )

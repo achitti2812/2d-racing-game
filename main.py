@@ -25,12 +25,14 @@ def main():
                     running = False
                 else:
                     application.handle_event(event)
+                    if application.quit_requested:
+                        running = False
 
             if not running:
                 break
 
             application.update(delta_time)
-            application.draw(screen)
+            application.draw(screen, clock.get_fps())
             pygame.display.flip()
     finally:
         pygame.quit()

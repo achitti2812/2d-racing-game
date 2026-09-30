@@ -142,10 +142,11 @@ def draw_results(
         )
 
     controls = (
-        ("R - Race Again", 554),
-        ("T - Track Selection", 581),
-        ("C - Car Selection", 608),
-        ("P - Profile", 635),
+        ("R - Race Again", 548),
+        ("T - Track Selection", 571),
+        ("C - Car Selection", 594),
+        ("P - Profile", 617),
+        ("M - Main Menu", 640),
     )
     for control_text, control_y in controls:
         rendered = small_font.render(

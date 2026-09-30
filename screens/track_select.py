@@ -32,6 +32,9 @@ class TrackSelectScreen:
         if event.type != pygame.KEYDOWN:
             return None
 
+        if event.key in (pygame.K_ESCAPE, pygame.K_b):
+            return settings.CAR_SELECTION
+
         key_to_index = {
             pygame.K_1: 0,
             pygame.K_KP1: 0,
@@ -65,7 +68,9 @@ class TrackSelectScreen:
         )
 
         subtitle = self.hint_font.render(
-            "Press 1, 2, or 3 to begin", True, (182, 194, 202)
+            "1 / 2 / 3 - Race    ESC / B - Car Selection",
+            True,
+            (182, 194, 202),
         )
         surface.blit(
             subtitle,
@@ -80,7 +85,7 @@ class TrackSelectScreen:
                 track_config.id in profile.unlocked_track_ids,
             )
 
-        footer_text = "Temporary Step 12 development selector"
+        footer_text = "Temporary Step 13 development selector"
         if selected_car is not None:
             footer_text = f"SELECTED CAR: {selected_car.name}"
         footer = self.description_font.render(

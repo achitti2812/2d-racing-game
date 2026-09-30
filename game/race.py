@@ -1,11 +1,13 @@
 """Race coordination, state transitions, timing, HUD, and finish logic."""
 
+import math
 import random
 
 import pygame
 
 from game import settings
 from game.collision import find_player_collision, handle_collision
+from game.formatting import ordinal
 from game.opponent import create_opponents
 from game.player import Player
 from game.road import Road
@@ -52,6 +54,9 @@ class Race:
         self.race_timer = 0.0
         self.countdown_timer = settings.COUNTDOWN_DURATION
         self.go_timer = 0.0
+        self.finish_message_timer = 0.0
+        self._last_countdown_number = None
+        self._presentation_events = []
 
     def handle_event(self, event):
         """Handle race-specific events; the application handles quitting."""
@@ -66,6 +71,8 @@ class Race:
             return settings.CAR_SELECTION
         elif event.key == pygame.K_p:
             return settings.PROFILE_SCREEN
+        elif event.key == pygame.K_m:
+            return settings.MAIN_MENU
         return None
 
     def update(self, delta_time):
@@ -81,20 +88,32 @@ class Race:
         if self.countdown_timer <= 0.0:
             self.state = settings.RACING
             self.go_timer = settings.GO_DISPLAY_DURATION
+            self._emit_presentation_event("go")
+        else:
+            countdown_number = max(1, math.ceil(self.countdown_timer))
+            if countdown_number != self._last_countdown_number:
+                self._last_countdown_number = countdown_number
+                self._emit_presentation_event("countdown")
 
     def _update_active_race(self, delta_time):
         frame_start_time = self.race_timer
         self.race_timer += delta_time
         self.go_timer = max(0.0, self.go_timer - delta_time)
+        self.finish_message_timer = max(
+            0.0, self.finish_message_timer - delta_time
+        )
         self.player.update_collision_timers(delta_time)
 
         player_was_finished = self.player.finished
         if not player_was_finished:
+            nitro_was_active = self.player.nitro_active
             self.player.update_controls(
                 delta_time,
                 self.track.get_center_x(self.player.distance),
                 self.track.get_curve_strength(self.player.distance),
             )
+            if self.player.nitro_active and not nitro_was_active:
+                self._emit_presentation_event("nitro")
         else:
             self.player.coast_after_finish(delta_time)
             self.camera_distance += self.player.speed * delta_time
@@ -134,6 +153,7 @@ class Race:
             )
             if collided_opponent is not None:
                 handle_collision(self.player, collided_opponent)
+                self._emit_presentation_event("collision")
                 self.player.sync_track_state(
                     self.track.get_center_x(self.player.distance),
                     self.track.get_curve_strength(self.player.distance),
@@ -212,6 +232,8 @@ class Race:
                 self.player.finish_position = finish_position
                 self.player.collision_cooldown = 0.0
                 self.player.crash_message_timer = 0.0
+                self.finish_message_timer = settings.FINISH_MESSAGE_DURATION
+                self._emit_presentation_event("finish")
             else:
                 opponent = next(
                     car
@@ -257,6 +279,15 @@ class Race:
         if self.player.finish_time is not None:
             return self.player.finish_time
         return self.race_timer
+
+    def consume_presentation_events(self):
+        """Return one-frame events for audio/visual presentation layers."""
+        events = tuple(self._presentation_events)
+        self._presentation_events.clear()
+        return events
+
+    def _emit_presentation_event(self, event_name):
+        self._presentation_events.append(event_name)
 
     def get_result(self):
         """Expose immutable final gameplay data without persistence concerns."""
@@ -306,6 +337,8 @@ class Race:
             self._draw_track_debug(surface)
         if self.player.crash_message_timer > 0.0:
             self._draw_crash_message(surface)
+        if self.finish_message_timer > 0.0:
+            self._draw_finish_message(surface)
         self._draw_start_signal(surface)
 
         if self.state == settings.FINISHED:
@@ -324,51 +357,92 @@ class Race:
             )
 
     def _draw_hud(self, surface):
-        panel = pygame.Surface((200, 234), pygame.SRCALPHA)
-        panel.fill((10, 12, 14, 175))
-        surface.blit(panel, (18, 18))
+        left_panel = pygame.Surface((260, 98), pygame.SRCALPHA)
+        left_panel.fill((8, 12, 16, 205))
+        surface.blit(left_panel, (16, 16))
+        pygame.draw.rect(surface, (70, 90, 102), (16, 16, 260, 98), 2)
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
-        step_label = self.label_font.render(
-            "STEP 12", True, (190, 206, 196)
+        step_label = self.control_font.render(
+            "STEP 13", True, (127, 218, 239)
         )
-        track_label = self.control_font.render(
-            self.track.name, True, (217, 224, 219)
+        track_label = self.label_font.render(
+            self.track.name.upper(), True, (217, 224, 219)
         )
         car_label = self.control_font.render(
-            f"CAR: {self.car_config.name}",
+            f"CAR  {self.car_config.name.upper()}",
             True,
             self.car_config.accent_color,
         )
-        speed_label = self.label_font.render(
-            f"SPEED: {round(self.player.speed)}", True, settings.WHITE
+        surface.blit(title, (28, 25))
+        surface.blit(step_label, (181, 31))
+        surface.blit(track_label, (28, 58))
+        surface.blit(car_label, (28, 86))
+
+        right_panel = pygame.Surface((174, 116), pygame.SRCALPHA)
+        right_panel.fill((8, 12, 16, 205))
+        right_x = settings.SCREEN_WIDTH - 190
+        surface.blit(right_panel, (right_x, 16))
+        pygame.draw.rect(
+            surface, (70, 90, 102), (right_x, 16, 174, 116), 2
         )
-        position_label = self.label_font.render(
-            f"POSITION: {self.player_position}/4", True, settings.WHITE
+        position_value = self.results_font.render(
+            f"{self.player_position} / 4", True, (255, 218, 92)
         )
-        progress_label = self.label_font.render(
-            f"PROGRESS: {round(self.progress)}%", True, settings.WHITE
+        position_name = self.control_font.render(
+            ordinal(self.player_position).upper(), True, (190, 206, 196)
+        )
+        progress_label = self.control_font.render(
+            f"PROGRESS  {round(self.progress)}%", True, settings.WHITE
         )
         minutes = int(self.displayed_time // 60)
         seconds = self.displayed_time % 60
-        time_label = self.label_font.render(
-            f"TIME: {minutes:02d}:{seconds:04.1f}",
+        time_label = self.control_font.render(
+            f"TIME  {minutes:02d}:{seconds:04.1f}",
             True,
             settings.WHITE,
         )
-        nitro_label = self.label_font.render("NITRO", True, settings.WHITE)
+        surface.blit(position_value, (right_x + 16, 25))
+        surface.blit(position_name, (right_x + 119, 37))
+        surface.blit(time_label, (right_x + 16, 78))
+        surface.blit(progress_label, (right_x + 16, 101))
 
-        surface.blit(title, (30, 27))
-        surface.blit(step_label, (30, 52))
-        surface.blit(track_label, (30, 73))
-        surface.blit(car_label, (30, 89))
-        surface.blit(speed_label, (30, 108))
-        surface.blit(position_label, (30, 131))
-        surface.blit(progress_label, (30, 154))
-        surface.blit(time_label, (30, 177))
-        surface.blit(nitro_label, (30, 200))
+        speed_panel = pygame.Surface((152, 86), pygame.SRCALPHA)
+        speed_panel.fill((8, 12, 16, 205))
+        speed_y = settings.SCREEN_HEIGHT - 104
+        surface.blit(speed_panel, (16, speed_y))
+        pygame.draw.rect(
+            surface, (70, 90, 102), (16, speed_y, 152, 86), 2
+        )
+        speed_value = self.results_font.render(
+            str(round(self.player.speed)), True, settings.WHITE
+        )
+        speed_name = self.control_font.render(
+            "SPEED", True, (190, 206, 196)
+        )
+        surface.blit(speed_value, (30, speed_y + 12))
+        surface.blit(speed_name, (32, speed_y + 60))
 
-        meter_rect = pygame.Rect(30, 221, 165, 12)
+        nitro_panel = pygame.Surface((304, 58), pygame.SRCALPHA)
+        nitro_panel.fill((8, 12, 16, 215))
+        nitro_x = 290
+        nitro_y = 16
+        surface.blit(nitro_panel, (nitro_x, nitro_y))
+        pygame.draw.rect(
+            surface, (70, 90, 102), (nitro_x, nitro_y, 304, 58), 2
+        )
+        nitro_status = "BOOST" if self.player.nitro_active else "NITRO"
+        if self.player.nitro_amount <= 0.0:
+            nitro_status = "NITRO - EMPTY"
+        nitro_color = (
+            settings.NITRO_METER_ACTIVE
+            if self.player.nitro_active
+            else settings.WHITE
+        )
+        nitro_label = self.label_font.render(nitro_status, True, nitro_color)
+        surface.blit(nitro_label, (nitro_x + 14, nitro_y + 8))
+
+        meter_rect = pygame.Rect(nitro_x + 120, nitro_y + 12, 168, 18)
         pygame.draw.rect(
             surface, settings.NITRO_METER_BACKGROUND, meter_rect
         )
@@ -383,33 +457,25 @@ class Race:
             pygame.draw.rect(
                 surface,
                 fill_color,
-                (meter_rect.x + 2, meter_rect.y + 2, fill_width, 8),
+                (
+                    meter_rect.x + 2,
+                    meter_rect.y + 2,
+                    fill_width,
+                    meter_rect.height - 4,
+                ),
             )
         pygame.draw.rect(surface, settings.WHITE, meter_rect, width=2)
 
-        control_text = (
-            "W/UP ACCELERATE   S/DOWN BRAKE   A/D OR LEFT/RIGHT STEER   "
-            "SPACE NITRO"
+        nitro_hint = self.control_font.render(
+            "W / UP + SPACE", True, (168, 186, 196)
         )
-        control_hint = self.control_font.render(
-            control_text, True, settings.WHITE
+        surface.blit(nitro_hint, (nitro_x + 14, nitro_y + 35))
+
+        pause_hint = self.control_font.render(
+            "P / ESC  PAUSE", True, settings.WHITE
         )
-        hint_padding = 8
-        hint_width = control_hint.get_width() + hint_padding * 2
-        hint_panel = pygame.Surface(
-            (
-                hint_width,
-                control_hint.get_height() + hint_padding * 2,
-            ),
-            pygame.SRCALPHA,
-        )
-        hint_panel.fill((10, 12, 14, 150))
-        hint_x = settings.SCREEN_WIDTH - hint_width - 18
-        surface.blit(hint_panel, (hint_x, 18))
-        surface.blit(
-            control_hint,
-            (hint_x + hint_padding, 18 + hint_padding),
-        )
+        hint_x = settings.SCREEN_WIDTH - pause_hint.get_width() - 18
+        surface.blit(pause_hint, (hint_x, settings.SCREEN_HEIGHT - 28))
 
         if (
             self.player.off_road
@@ -417,14 +483,15 @@ class Race:
             and not self.player.finished
         ):
             off_road_label = self.label_font.render(
-                "OFF ROAD", True, (255, 198, 82)
+                "OFF ROAD - TRACTION REDUCED", True, (255, 198, 82)
             )
             off_road_panel = pygame.Surface(
                 (off_road_label.get_width() + 16, 27), pygame.SRCALPHA
             )
             off_road_panel.fill((35, 23, 10, 190))
-            surface.blit(off_road_panel, (18, 258))
-            surface.blit(off_road_label, (26, 262))
+            warning_x = (settings.SCREEN_WIDTH - off_road_panel.get_width()) // 2
+            surface.blit(off_road_panel, (warning_x, 142))
+            surface.blit(off_road_label, (warning_x + 8, 146))
 
     def _draw_track_debug(self, surface):
         """Show compact curved-track handling data when explicitly enabled."""
@@ -462,35 +529,71 @@ class Race:
         surface.blit(crash_shadow, crash_rect.move(3, 3))
         surface.blit(crash_text, crash_rect)
 
+    def _draw_finish_message(self, surface):
+        finish_text = self.crash_font.render(
+            "FINISH!", True, (255, 221, 92)
+        )
+        finish_shadow = self.crash_font.render(
+            "FINISH!", True, settings.BLACK
+        )
+        finish_rect = finish_text.get_rect(
+            center=(settings.SCREEN_WIDTH // 2, 175)
+        )
+        surface.blit(finish_shadow, finish_rect.move(3, 3))
+        surface.blit(finish_text, finish_rect)
+
     def _draw_start_signal(self, surface):
         signal_text = None
         signal_color = settings.WHITE
+        pulse_progress = 0.0
 
         if self.state == settings.COUNTDOWN:
             if self.countdown_timer > 2.0:
                 signal_text = "3"
+                signal_color = (244, 119, 83)
             elif self.countdown_timer > 1.0:
                 signal_text = "2"
+                signal_color = (255, 190, 76)
             else:
                 signal_text = "1"
+                signal_color = (255, 232, 112)
+            pulse_progress = 1.0 - (self.countdown_timer % 1.0)
         elif self.go_timer > 0.0:
             signal_text = "GO!"
             signal_color = (92, 235, 116)
+            pulse_progress = 1.0 - (
+                self.go_timer / settings.GO_DISPLAY_DURATION
+            )
 
         if signal_text is None:
             return
 
-        shadow = self.countdown_font.render(
+        pulse_size = max(96, round(132 - pulse_progress * 25))
+        pulse_font = pygame.font.Font(None, pulse_size)
+        glow_radius = max(60, round(88 - pulse_progress * 18))
+        glow = pygame.Surface(
+            (glow_radius * 2, glow_radius * 2), pygame.SRCALPHA
+        )
+        pygame.draw.circle(
+            glow,
+            (*signal_color, 42),
+            (glow_radius, glow_radius),
+            glow_radius,
+        )
+        glow_center = (
+            settings.SCREEN_WIDTH // 2,
+            settings.SCREEN_HEIGHT // 2 - 55,
+        )
+        surface.blit(glow, glow.get_rect(center=glow_center))
+
+        shadow = pulse_font.render(
             signal_text, True, settings.BLACK
         )
-        text = self.countdown_font.render(
+        text = pulse_font.render(
             signal_text, True, signal_color
         )
         text_rect = text.get_rect(
-            center=(
-                settings.SCREEN_WIDTH // 2,
-                settings.SCREEN_HEIGHT // 2 - 55,
-            )
+            center=glow_center
         )
         surface.blit(shadow, text_rect.move(4, 4))
         surface.blit(text, text_rect)

@@ -17,10 +17,16 @@ class ProfileScreen:
         self.small_font = pygame.font.Font(None, 19)
 
     def handle_event(self, event):
-        return (
-            event.type == pygame.KEYDOWN
-            and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER)
-        )
+        if event.type != pygame.KEYDOWN:
+            return None
+        if event.key in (
+            pygame.K_RETURN,
+            pygame.K_KP_ENTER,
+            pygame.K_ESCAPE,
+            pygame.K_b,
+        ):
+            return settings.MAIN_MENU
+        return None
 
     def draw(self, surface, profile):
         surface.fill((14, 18, 23))
@@ -41,7 +47,7 @@ class ProfileScreen:
         self._draw_records(surface, profile)
 
         continue_text = self.label_font.render(
-            "ENTER - Continue to Car Selection", True, settings.WHITE
+            "ENTER / ESC / B - Back to Main Menu", True, settings.WHITE
         )
         surface.blit(
             continue_text,
