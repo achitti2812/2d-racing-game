@@ -4,7 +4,7 @@ from game.track import AIDifficultyConfig, TrackConfig, TrackSegment
 
 
 EASY_AI = AIDifficultyConfig(
-    max_speed_multiplier=0.985,
+    max_speed_multiplier=0.96,
     acceleration_multiplier=0.96,
     deceleration_multiplier=1.0,
     target_factor_adjustment=-0.006,
@@ -22,7 +22,7 @@ MEDIUM_AI = AIDifficultyConfig(
 )
 
 HARD_AI = AIDifficultyConfig(
-    max_speed_multiplier=1.015,
+    max_speed_multiplier=1.005,
     acceleration_multiplier=1.04,
     deceleration_multiplier=1.05,
     target_factor_adjustment=0.004,

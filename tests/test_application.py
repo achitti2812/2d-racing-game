@@ -158,6 +158,7 @@ class ApplicationTests(unittest.TestCase):
         race.race_timer = 12.5
         race.player.distance = 100.0
         race.player.nitro_amount = 42.0
+        race.displayed_speed = 87.0
         race.player.collision_cooldown = 0.8
         race.player.crash_message_timer = 0.4
         race.opponents[0].distance = 130.0
@@ -167,6 +168,7 @@ class ApplicationTests(unittest.TestCase):
             race.race_timer,
             race.player.distance,
             race.player.nitro_amount,
+            race.displayed_speed,
             race.player.collision_cooldown,
             race.player.crash_message_timer,
             race.opponents[0].distance,
@@ -180,6 +182,7 @@ class ApplicationTests(unittest.TestCase):
                 race.race_timer,
                 race.player.distance,
                 race.player.nitro_amount,
+                race.displayed_speed,
                 race.player.collision_cooldown,
                 race.player.crash_message_timer,
                 race.opponents[0].distance,

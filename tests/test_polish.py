@@ -18,6 +18,7 @@ from game.scenery import TrackScenery
 from game.track import Track
 from game.tracks import TRACK_1, TRACK_2
 from game.user_settings import UserSettings
+from ui.speedometer import speed_to_angle
 
 
 class PolishTests(unittest.TestCase):
@@ -154,6 +155,32 @@ class PolishTests(unittest.TestCase):
 
         self.assertEqual(first_events.count("crowd_start"), 1)
         self.assertNotIn("crowd_start", second_events)
+
+    def test_speedometer_range_mapping_and_visual_smoothing(self):
+        self.assertEqual(speed_to_angle(0.0), 135.0)
+        self.assertEqual(speed_to_angle(60.0), 202.5)
+        self.assertEqual(speed_to_angle(120.0), 270.0)
+        self.assertEqual(speed_to_angle(180.0), 337.5)
+        self.assertEqual(speed_to_angle(240.0), 405.0)
+        self.assertEqual(speed_to_angle(500.0), 405.0)
+
+        race = Race(TRACK_1, BALANCED_CAR, random_seed=4)
+        race.player.speed = 180.0
+        race._update_speedometer(1.0 / 60.0)
+
+        self.assertGreater(race.displayed_speed, 0.0)
+        self.assertLess(race.displayed_speed, race.player.speed)
+        self.assertEqual(race.player.speed, 180.0)
+
+        frozen_value = race.displayed_speed
+        race.player.speed = 0.0
+        race._update_speedometer(1.0 / 60.0)
+        self.assertGreater(race.displayed_speed, 0.0)
+        self.assertLess(race.displayed_speed, frozen_value)
+
+        race.reset_race()
+        self.assertEqual(race.displayed_speed, 0.0)
+        self.assertNotEqual(frozen_value, race.displayed_speed)
 
 
 if __name__ == "__main__":

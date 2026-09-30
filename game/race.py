@@ -15,6 +15,7 @@ from game.road import Road
 from game.race_result import RaceResult
 from game.track import Track
 from screens.results import draw_results
+from ui.speedometer import draw_speedometer
 
 
 class Race:
@@ -56,6 +57,7 @@ class Race:
         self.countdown_timer = settings.COUNTDOWN_DURATION
         self.go_timer = 0.0
         self.finish_message_timer = 0.0
+        self.displayed_speed = 0.0
         self._last_countdown_number = None
         self._presentation_events = []
 
@@ -81,6 +83,14 @@ class Race:
             self._update_countdown(delta_time)
         elif self.state == settings.RACING:
             self._update_active_race(delta_time)
+        self._update_speedometer(delta_time)
+
+    def _update_speedometer(self, delta_time):
+        """Smooth only the displayed needle without changing actual speed."""
+        response = 1.0 - math.exp(-settings.SPEEDOMETER_RESPONSE * delta_time)
+        self.displayed_speed += (
+            self.player.speed - self.displayed_speed
+        ) * response
 
     def _update_countdown(self, delta_time):
         self.countdown_timer = max(
@@ -447,24 +457,13 @@ class Race:
             ),
         )
 
-        speed_panel = pygame.Surface((152, 86), pygame.SRCALPHA)
-        speed_panel.fill((8, 12, 16, 205))
-        speed_y = settings.SCREEN_HEIGHT - 104
-        surface.blit(speed_panel, (16, speed_y))
-        pygame.draw.rect(
-            surface, (70, 90, 102), (16, speed_y, 152, 86), 2
+        draw_speedometer(
+            surface,
+            (12, settings.SCREEN_HEIGHT - 168),
+            self.player.speed,
+            self.displayed_speed,
+            self.player.nitro_active,
         )
-        pygame.draw.line(
-            surface, (72, 205, 231), (16, speed_y + 10), (16, speed_y + 68), 4
-        )
-        speed_value = self.results_font.render(
-            str(round(self.player.speed)), True, settings.WHITE
-        )
-        speed_name = self.control_font.render(
-            "SPEED", True, (190, 206, 196)
-        )
-        surface.blit(speed_value, (30, speed_y + 12))
-        surface.blit(speed_name, (32, speed_y + 60))
 
         nitro_panel = pygame.Surface((304, 58), pygame.SRCALPHA)
         nitro_panel.fill((8, 12, 16, 215))

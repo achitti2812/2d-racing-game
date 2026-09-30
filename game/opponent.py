@@ -106,9 +106,13 @@ class Opponent:
         self.upcoming_curve_strength = track.get_upcoming_curve_strength(
             self.distance
         )
+        curve_severity = max(
+            0.0,
+            self.upcoming_curve_strength - settings.AI_MILD_CURVE_THRESHOLD,
+        )
         curve_reduction = min(
             settings.AI_MAX_CURVE_SPEED_REDUCTION,
-            self.upcoming_curve_strength
+            curve_severity
             * settings.AI_CURVE_SPEED_REDUCTION_FACTOR
             * self.curve_caution,
         )
@@ -324,10 +328,10 @@ def create_opponents(track, random_source=None):
             "personality": "FAST START",
             "lane": 0,
             "start_y": 445.0,
-            "max_speed": 178.0,
+            "max_speed": 183.0,
             "acceleration": 108.0,
             "deceleration": 48.0,
-            "min_target_factor": 0.97,
+            "min_target_factor": 0.99,
             "max_target_factor": 1.0,
             "decision_time_range": (1.5, 2.4),
             "curve_caution": 1.05,
@@ -339,11 +343,11 @@ def create_opponents(track, random_source=None):
             "personality": "TOP END",
             "lane": 1,
             "start_y": 330.0,
-            "max_speed": 183.0,
+            "max_speed": 195.0,
             "acceleration": 66.0,
             "deceleration": 38.0,
-            "min_target_factor": 0.94,
-            "max_target_factor": 0.99,
+            "min_target_factor": 0.98,
+            "max_target_factor": 1.0,
             "decision_time_range": (2.6, 4.0),
             "curve_caution": 1.0,
             "color": (224, 164, 43),
@@ -354,11 +358,11 @@ def create_opponents(track, random_source=None):
             "personality": "BALANCED",
             "lane": 2,
             "start_y": 445.0,
-            "max_speed": 181.0,
-            "acceleration": 82.0,
+            "max_speed": 189.0,
+            "acceleration": 84.0,
             "deceleration": 44.0,
-            "min_target_factor": 0.965,
-            "max_target_factor": 0.995,
+            "min_target_factor": 0.985,
+            "max_target_factor": 1.0,
             "decision_time_range": (2.0, 3.2),
             "curve_caution": 0.95,
             "color": (137, 83, 190),
