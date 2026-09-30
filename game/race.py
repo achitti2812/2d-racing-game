@@ -9,6 +9,7 @@ from game.collision import find_player_collision, handle_collision
 from game.opponent import create_opponents
 from game.player import Player
 from game.road import Road
+from game.race_result import RaceResult
 from game.track import Track
 from screens.results import draw_results
 
@@ -58,10 +59,13 @@ class Race:
             return None
         if event.key == pygame.K_r:
             self.reset_race()
+            return settings.RACE_RESTARTED
         elif event.key == pygame.K_t:
             return settings.TRACK_SELECTION
         elif event.key == pygame.K_c:
             return settings.CAR_SELECTION
+        elif event.key == pygame.K_p:
+            return settings.PROFILE_SCREEN
         return None
 
     def update(self, delta_time):
@@ -254,7 +258,26 @@ class Race:
             return self.player.finish_time
         return self.race_timer
 
-    def draw(self, surface):
+    def get_result(self):
+        """Expose immutable final gameplay data without persistence concerns."""
+        if self.state != settings.FINISHED:
+            return None
+        return RaceResult(
+            track_id=self.track_config.id,
+            track_name=self.track_config.name,
+            car_id=self.car_config.id,
+            car_name=self.car_config.name,
+            player_position=self.player.finish_position,
+            player_time=self.player.finish_time,
+            finishing_order=tuple(self.finishing_order),
+        )
+
+    def draw(
+        self,
+        surface,
+        progression_update=None,
+        persistence_message="",
+    ):
         self.road.draw(surface, self.camera_distance)
         visible_opponents = self.visible_opponents
         for opponent in visible_opponents:
@@ -296,6 +319,8 @@ class Race:
                 self.player.finish_time,
                 self.track.name,
                 self.car_config.name,
+                progression_update,
+                persistence_message,
             )
 
     def _draw_hud(self, surface):
@@ -305,7 +330,7 @@ class Race:
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.label_font.render(
-            "STEP 11", True, (190, 206, 196)
+            "STEP 12", True, (190, 206, 196)
         )
         track_label = self.control_font.render(
             self.track.name, True, (217, 224, 219)

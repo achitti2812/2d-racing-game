@@ -3,6 +3,7 @@
 import pygame
 
 from game import settings
+from game.progression import CAR_UNLOCK_HINTS
 
 
 class CarSelectScreen:
@@ -15,8 +16,19 @@ class CarSelectScreen:
         self.label_font = pygame.font.Font(None, 20)
         self.description_font = pygame.font.Font(None, 19)
         self.hint_font = pygame.font.Font(None, 24)
+        self.message = ""
+        self.message_timer = 0.0
 
-    def handle_event(self, event):
+    def update(self, delta_time):
+        self.message_timer = max(0.0, self.message_timer - delta_time)
+        if self.message_timer <= 0.0:
+            self.message = ""
+
+    def show_message(self, message, duration=2.0):
+        self.message = message
+        self.message_timer = duration
+
+    def handle_event(self, event, profile):
         if event.type != pygame.KEYDOWN:
             return None
 
@@ -31,9 +43,17 @@ class CarSelectScreen:
         selected_index = key_to_index.get(event.key)
         if selected_index is None or selected_index >= len(self.car_configs):
             return None
-        return self.car_configs[selected_index]
+        selected_car = self.car_configs[selected_index]
+        if selected_car.id not in profile.unlocked_car_ids:
+            unlock_hint = CAR_UNLOCK_HINTS.get(
+                selected_car.id, "Complete earlier content"
+            )
+            self.message = f"{selected_car.name} IS LOCKED - {unlock_hint} first."
+            self.message_timer = 2.0
+            return None
+        return selected_car
 
-    def draw(self, surface):
+    def draw(self, surface, profile):
         surface.fill((14, 18, 23))
 
         title = self.title_font.render("SELECT CAR", True, settings.WHITE)
@@ -52,15 +72,27 @@ class CarSelectScreen:
         )
 
         for index, car_config in enumerate(self.car_configs, start=1):
-            self._draw_car_card(surface, index, car_config)
+            self._draw_car_card(
+                surface,
+                index,
+                car_config,
+                car_config.id in profile.unlocked_car_ids,
+                car_config.id == profile.selected_car_id,
+            )
 
-    def _draw_car_card(self, surface, number, car_config):
+        if self.message_timer > 0.0 and self.message:
+            self._draw_message(surface)
+
+    def _draw_car_card(
+        self, surface, number, car_config, unlocked, selected
+    ):
         panel_y = 115 + (number - 1) * 180
         panel_rect = pygame.Rect(50, panel_y, 700, 165)
         pygame.draw.rect(surface, (29, 35, 42), panel_rect, border_radius=10)
+        border_color = car_config.accent_color if unlocked else (91, 96, 102)
         pygame.draw.rect(
             surface,
-            car_config.accent_color,
+            border_color,
             panel_rect,
             width=3,
             border_radius=10,
@@ -87,6 +119,22 @@ class CarSelectScreen:
         surface.blit(name_text, (205, panel_y + 20))
         surface.blit(description_text, (172, panel_y + 57))
         surface.blit(speed_text, (172, panel_y + 89))
+
+        if unlocked:
+            status_text = "SELECTED / AVAILABLE" if selected else "AVAILABLE"
+            status_color = (114, 224, 143)
+        else:
+            status_text = (
+                "LOCKED - "
+                + CAR_UNLOCK_HINTS.get(
+                    car_config.id, "Complete earlier content"
+                )
+            )
+            status_color = (244, 157, 104)
+        status = self.description_font.render(
+            status_text, True, status_color
+        )
+        surface.blit(status, (172, panel_y + 121))
 
         ratings = (
             ("SPEED", car_config.speed_rating),
@@ -159,3 +207,20 @@ class CarSelectScreen:
             pygame.draw.rect(
                 surface, segment_color, segment_rect, border_radius=2
             )
+
+    def _draw_message(self, surface):
+        panel_rect = pygame.Rect(120, 310, 560, 80)
+        panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+        panel.fill((8, 10, 12, 235))
+        surface.blit(panel, panel_rect)
+        pygame.draw.rect(
+            surface,
+            (244, 157, 104),
+            panel_rect,
+            width=2,
+            border_radius=8,
+        )
+        message = self.hint_font.render(
+            self.message, True, settings.WHITE
+        )
+        surface.blit(message, message.get_rect(center=panel_rect.center))
