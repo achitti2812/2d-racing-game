@@ -7,6 +7,7 @@ import pygame
 
 from game import settings
 from game.collision import find_player_collision, handle_collision
+from game.effects import draw_speed_streaks
 from game.formatting import ordinal
 from game.opponent import create_opponents
 from game.player import Player
@@ -92,6 +93,8 @@ class Race:
         else:
             countdown_number = max(1, math.ceil(self.countdown_timer))
             if countdown_number != self._last_countdown_number:
+                if self._last_countdown_number is None:
+                    self._emit_presentation_event("crowd_start")
                 self._last_countdown_number = countdown_number
                 self._emit_presentation_event("countdown")
 
@@ -280,6 +283,17 @@ class Race:
             return self.player.finish_time
         return self.race_timer
 
+    @property
+    def crowd_audio_intensity(self):
+        return self.road.crowd_intensity_at(self.camera_distance)
+
+    @property
+    def tire_audio_intensity(self):
+        speed_factor = max(0.0, min((self.player.speed - 120.0) / 90.0, 1.0))
+        steering_effort = abs(self.player.steering_input)
+        curve_load = min(abs(self.player.curve_force) / 90.0, 1.0)
+        return speed_factor * max(steering_effort * 0.68, curve_load)
+
     def consume_presentation_events(self):
         """Return one-frame events for audio/visual presentation layers."""
         events = tuple(self._presentation_events)
@@ -310,6 +324,12 @@ class Race:
         persistence_message="",
     ):
         self.road.draw(surface, self.camera_distance)
+        draw_speed_streaks(
+            surface,
+            self.player.speed,
+            self.player.nitro_active,
+            self.camera_distance,
+        )
         visible_opponents = self.visible_opponents
         for opponent in visible_opponents:
             opponent.draw(surface)
@@ -361,10 +381,11 @@ class Race:
         left_panel.fill((8, 12, 16, 205))
         surface.blit(left_panel, (16, 16))
         pygame.draw.rect(surface, (70, 90, 102), (16, 16, 260, 98), 2)
+        pygame.draw.line(surface, (66, 203, 231), (30, 16), (112, 16), 3)
 
         title = self.title_font.render("2D RACING", True, settings.WHITE)
         step_label = self.control_font.render(
-            "STEP 13", True, (127, 218, 239)
+            "STEP 14", True, (127, 218, 239)
         )
         track_label = self.label_font.render(
             self.track.name.upper(), True, (217, 224, 219)
@@ -386,6 +407,13 @@ class Race:
         pygame.draw.rect(
             surface, (70, 90, 102), (right_x, 16, 174, 116), 2
         )
+        pygame.draw.line(
+            surface,
+            (255, 218, 92),
+            (right_x + 14, 16),
+            (right_x + 76, 16),
+            3,
+        )
         position_value = self.results_font.render(
             f"{self.player_position} / 4", True, (255, 218, 92)
         )
@@ -406,6 +434,18 @@ class Race:
         surface.blit(position_name, (right_x + 119, 37))
         surface.blit(time_label, (right_x + 16, 78))
         surface.blit(progress_label, (right_x + 16, 101))
+        progress_bar = pygame.Rect(right_x + 16, 122, 142, 4)
+        pygame.draw.rect(surface, (45, 55, 62), progress_bar)
+        pygame.draw.rect(
+            surface,
+            (72, 205, 231),
+            (
+                progress_bar.x,
+                progress_bar.y,
+                round(progress_bar.width * self.progress / 100.0),
+                progress_bar.height,
+            ),
+        )
 
         speed_panel = pygame.Surface((152, 86), pygame.SRCALPHA)
         speed_panel.fill((8, 12, 16, 205))
@@ -413,6 +453,9 @@ class Race:
         surface.blit(speed_panel, (16, speed_y))
         pygame.draw.rect(
             surface, (70, 90, 102), (16, speed_y, 152, 86), 2
+        )
+        pygame.draw.line(
+            surface, (72, 205, 231), (16, speed_y + 10), (16, speed_y + 68), 4
         )
         speed_value = self.results_font.render(
             str(round(self.player.speed)), True, settings.WHITE
@@ -430,6 +473,13 @@ class Race:
         surface.blit(nitro_panel, (nitro_x, nitro_y))
         pygame.draw.rect(
             surface, (70, 90, 102), (nitro_x, nitro_y, 304, 58), 2
+        )
+        pygame.draw.line(
+            surface,
+            settings.NITRO_METER_ACTIVE,
+            (nitro_x + 12, nitro_y),
+            (nitro_x + 82, nitro_y),
+            3,
         )
         nitro_status = "BOOST" if self.player.nitro_active else "NITRO"
         if self.player.nitro_amount <= 0.0:

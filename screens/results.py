@@ -25,12 +25,23 @@ def draw_results(
     )
     overlay.fill((5, 7, 9, 220))
     surface.blit(overlay, (0, 0))
+    _draw_celebration(surface, player_finish_position)
 
     panel_rect = pygame.Rect(130, 30, 540, 640)
     pygame.draw.rect(surface, (24, 28, 32), panel_rect, border_radius=12)
-    pygame.draw.rect(
-        surface, settings.WHITE, panel_rect, width=2, border_radius=12
+    border_color = (
+        (255, 218, 92) if player_finish_position == 1 else (86, 205, 232)
     )
+    pygame.draw.rect(
+        surface, border_color, panel_rect, width=2, border_radius=12
+    )
+    for column in range(18):
+        color = settings.WHITE if column % 2 == 0 else settings.BLACK
+        pygame.draw.rect(
+            surface,
+            color,
+            (panel_rect.x + 18 + column * 28, panel_rect.y + 8, 28, 8),
+        )
 
     title = title_font.render("RACE COMPLETE", True, settings.WHITE)
     surface.blit(
@@ -155,4 +166,24 @@ def draw_results(
         surface.blit(
             rendered,
             rendered.get_rect(center=(settings.SCREEN_WIDTH // 2, control_y)),
+        )
+
+
+def _draw_celebration(surface, player_position):
+    colors = (
+        (255, 211, 74),
+        (61, 194, 231),
+        (239, 89, 79),
+        (105, 220, 139),
+    )
+    amount = 34 if player_position <= 3 else 20
+    for index in range(amount):
+        x = (index * 97 + 31) % settings.SCREEN_WIDTH
+        y = (index * 53 + 17) % settings.SCREEN_HEIGHT
+        width = 3 + index % 4
+        height = 8 + index % 7
+        pygame.draw.rect(
+            surface,
+            colors[index % len(colors)],
+            (x, y, width, height),
         )

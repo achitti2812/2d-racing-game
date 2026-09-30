@@ -4,6 +4,8 @@ import pygame
 
 from game import settings
 from game.progression import TRACK_UNLOCK_HINTS
+from game.track import Track
+from ui import components
 
 
 class TrackSelectScreen:
@@ -59,7 +61,7 @@ class TrackSelectScreen:
         return selected_track
 
     def draw(self, surface, selected_car, profile):
-        surface.fill((14, 18, 23))
+        components.draw_background(surface)
 
         title = self.title_font.render("SELECT TRACK", True, settings.WHITE)
         surface.blit(
@@ -85,7 +87,7 @@ class TrackSelectScreen:
                 track_config.id in profile.unlocked_track_ids,
             )
 
-        footer_text = "Temporary Step 13 development selector"
+        footer_text = "STEP 14 CIRCUIT SELECT"
         if selected_car is not None:
             footer_text = f"SELECTED CAR: {selected_car.name}"
         footer = self.description_font.render(
@@ -114,22 +116,13 @@ class TrackSelectScreen:
             border_radius=10,
         )
 
-        swatch_rect = pygame.Rect(120, panel_y + 20, 70, 85)
+        swatch_rect = pygame.Rect(118, panel_y + 15, 82, 96)
         pygame.draw.rect(
             surface, track_config.terrain_color, swatch_rect, border_radius=6
         )
-        pygame.draw.rect(
-            surface,
-            track_config.shoulder_color,
-            (145, panel_y + 20, 20, 85),
-        )
-        pygame.draw.rect(
-            surface,
-            settings.ROAD_COLOR,
-            (150, panel_y + 20, 10, 85),
-        )
+        self._draw_track_preview(surface, swatch_rect, track_config)
 
-        number_text = self.track_font.render(
+        number_text = self.description_font.render(
             str(number), True, settings.WHITE
         )
         surface.blit(
@@ -161,10 +154,10 @@ class TrackSelectScreen:
             (172, 184, 191),
         )
 
-        surface.blit(name_text, (215, panel_y + 17))
-        surface.blit(difficulty_text, (215, panel_y + 49))
+        surface.blit(name_text, (220, panel_y + 17))
+        surface.blit(difficulty_text, (220, panel_y + 49))
         surface.blit(distance_text, (330, panel_y + 52))
-        surface.blit(description_text, (215, panel_y + 82))
+        surface.blit(description_text, (220, panel_y + 82))
 
         if unlocked:
             status_text = "AVAILABLE"
@@ -180,7 +173,22 @@ class TrackSelectScreen:
         status = self.description_font.render(
             status_text, True, status_color
         )
-        surface.blit(status, (215, panel_y + 102))
+        surface.blit(status, (220, panel_y + 102))
+
+    def _draw_track_preview(self, surface, rect, track_config):
+        track = Track(track_config)
+        points = []
+        for index in range(36):
+            distance = track.race_distance * index / 35
+            offset = track.get_center_x(distance) - settings.SCREEN_WIDTH / 2
+            x = rect.centerx + offset * (rect.width - 20) / 260.0
+            y = rect.bottom - 8 - index * (rect.height - 16) / 35
+            points.append((round(x), round(y)))
+        pygame.draw.lines(surface, track_config.shoulder_color, False, points, 9)
+        pygame.draw.lines(surface, settings.ROAD_COLOR, False, points, 6)
+        pygame.draw.lines(surface, (225, 230, 228), False, points, 1)
+        pygame.draw.circle(surface, (93, 231, 144), points[0], 3)
+        pygame.draw.circle(surface, (250, 203, 67), points[-1], 3)
 
     def _draw_message(self, surface):
         panel_rect = pygame.Rect(90, 310, 620, 80)

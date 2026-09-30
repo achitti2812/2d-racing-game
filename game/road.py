@@ -3,6 +3,7 @@
 import pygame
 
 from game import settings
+from game.scenery import TrackScenery
 
 
 class Road:
@@ -10,6 +11,7 @@ class Road:
 
     def __init__(self, track):
         self.track = track
+        self.scenery = TrackScenery(track)
 
     def draw(self, surface, camera_distance):
         self._draw_terrain(surface)
@@ -17,6 +19,10 @@ class Road:
         self._draw_highway(surface, samples)
         self._draw_lane_markings(surface, camera_distance)
         self._draw_race_lines(surface, camera_distance)
+        self.scenery.draw(surface, camera_distance)
+
+    def crowd_intensity_at(self, world_distance):
+        return self.scenery.crowd_intensity_at(world_distance)
 
     def _draw_terrain(self, surface):
         surface.fill(self.track.config.terrain_color)

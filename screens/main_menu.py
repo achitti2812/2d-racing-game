@@ -45,8 +45,14 @@ class MainMenuScreen:
 
     def draw(self, surface, profile):
         components.draw_background(surface)
+        self._draw_racing_backdrop(surface)
 
+        shadow = self.title_font.render("2D RACING", True, (0, 0, 0))
         title = self.title_font.render("2D RACING", True, theme.TEXT)
+        surface.blit(
+            shadow,
+            shadow.get_rect(center=(settings.SCREEN_WIDTH // 2 + 4, 109)),
+        )
         surface.blit(
             title,
             title.get_rect(center=(settings.SCREEN_WIDTH // 2, 105)),
@@ -65,8 +71,6 @@ class MainMenuScreen:
             summary.get_rect(center=(settings.SCREEN_WIDTH // 2, 183)),
         )
 
-        panel_rect = pygame.Rect(185, 225, 430, 295)
-        components.draw_panel(surface, panel_rect)
         for index, (label, _) in enumerate(self.ITEMS):
             components.draw_menu_item(
                 surface,
@@ -81,3 +85,33 @@ class MainMenuScreen:
             self.footer_font,
             "UP / DOWN - Navigate    ENTER - Select    ESC - Quit",
         )
+
+    def _draw_racing_backdrop(self, surface):
+        overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        road_points = ((305, 0), (495, 0), (755, 700), (45, 700))
+        pygame.draw.polygon(overlay, (18, 23, 29, 205), road_points)
+        pygame.draw.lines(
+            overlay, (50, 72, 82, 170), False, ((305, 0), (45, 700)), 4
+        )
+        pygame.draw.lines(
+            overlay, (50, 72, 82, 170), False, ((495, 0), (755, 700)), 4
+        )
+        motion = (pygame.time.get_ticks() // 12) % 100
+        for y in range(-100 + motion, 750, 100):
+            progress = max(0.0, min(y / 700.0, 1.0))
+            half_width = 6 + progress * 24
+            pygame.draw.polygon(
+                overlay,
+                (111, 222, 240, 70),
+                (
+                    (400 - half_width, y),
+                    (400 + half_width, y),
+                    (404 + half_width, y + 42),
+                    (396 - half_width, y + 42),
+                ),
+            )
+        for x in (32, 82, 718, 768):
+            pygame.draw.line(
+                overlay, (86, 205, 232, 70), (x, 110), (x, 360), 2
+            )
+        surface.blit(overlay, (0, 0))

@@ -4,6 +4,7 @@ import pygame
 
 from game import settings
 from game.profile import MAX_PLAYER_NAME_LENGTH, normalize_player_name
+from ui import components
 
 
 class ProfileSetupScreen:
@@ -45,7 +46,10 @@ class ProfileSetupScreen:
         return None
 
     def draw(self, surface):
-        surface.fill((14, 18, 23))
+        components.draw_background(surface)
+
+        panel_rect = pygame.Rect(120, 92, 560, 390)
+        components.draw_panel(surface, panel_rect)
 
         title = self.title_font.render(
             "CREATE PLAYER PROFILE", True, settings.WHITE

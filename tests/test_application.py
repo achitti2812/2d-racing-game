@@ -227,6 +227,7 @@ class ApplicationTests(unittest.TestCase):
     def test_pause_abandon_does_not_create_result(self):
         application = self.make_application()
         self.attach_race(application)
+        application.audio.start_race_audio()
         original_profile = application.profile.to_dict()
 
         application.handle_event(key_event(pygame.K_p))
@@ -235,6 +236,7 @@ class ApplicationTests(unittest.TestCase):
 
         self.assertEqual(application.state, settings.MAIN_MENU)
         self.assertIsNone(application.race)
+        self.assertFalse(application.audio.race_audio_active)
         self.assertEqual(application.profile.to_dict(), original_profile)
 
     def test_silent_audio_manager_is_safe(self):
@@ -259,7 +261,10 @@ class ApplicationTests(unittest.TestCase):
         race = Race(TRACKS[0], CARS[0], random_seed=7)
 
         race.update(0.016)
-        self.assertEqual(race.consume_presentation_events(), ("countdown",))
+        self.assertEqual(
+            race.consume_presentation_events(),
+            ("crowd_start", "countdown"),
+        )
 
         race.countdown_timer = 0.005
         race.update(0.010)

@@ -104,6 +104,14 @@ class GameApplication:
         elif self.state == settings.RACE_SCREEN and self.race is not None:
             self.race.update(delta_time)
             self._process_race_presentation_events()
+            self.audio.update_race_audio(
+                speed=self.race.player.speed,
+                maximum_speed=self.race.car_config.nitro_max_speed,
+                throttle=self.race.player.throttle_requested,
+                nitro_active=self.race.player.nitro_active,
+                crowd_intensity=self.race.crowd_audio_intensity,
+                tire_intensity=self.race.tire_audio_intensity,
+            )
             self.screen_shake_timer = max(
                 0.0, self.screen_shake_timer - delta_time
             )
@@ -112,6 +120,7 @@ class GameApplication:
                 and not self.race_result_committed
             ):
                 self._commit_race_result()
+                self.audio.stop_race_audio()
 
     def draw(self, surface, current_fps=0.0):
         if self.state == settings.PROFILE_SETUP:
@@ -208,6 +217,7 @@ class GameApplication:
         self.progression_update = None
         self.persistence_message = ""
         self.screen_shake_timer = 0.0
+        self.audio.start_race_audio()
         self.audio.play_sfx("menu_select")
         self.state = settings.RACE_SCREEN
 
@@ -219,6 +229,7 @@ class GameApplication:
         ):
             self.pause_menu.reset_selection()
             self.audio.play_sfx("menu_select")
+            self.audio.pause_race_audio()
             self.state = settings.PAUSED
             return
 
@@ -231,6 +242,8 @@ class GameApplication:
             self.progression_update = None
             self.persistence_message = ""
             self.screen_shake_timer = 0.0
+            self.audio.stop_race_audio()
+            self.audio.start_race_audio()
         elif requested_state == settings.TRACK_SELECTION:
             self._discard_race(settings.TRACK_SELECTION)
         elif requested_state == settings.CAR_SELECTION:
@@ -246,6 +259,7 @@ class GameApplication:
             self.audio.play_sfx("menu_move")
         elif action == pause_menu.RESUME:
             self.audio.play_sfx("menu_select")
+            self.audio.resume_race_audio()
             self.state = settings.RACE_SCREEN
         elif action == pause_menu.RESTART:
             self.audio.play_sfx("menu_select")
@@ -254,6 +268,8 @@ class GameApplication:
             self.progression_update = None
             self.persistence_message = ""
             self.screen_shake_timer = 0.0
+            self.audio.stop_race_audio()
+            self.audio.start_race_audio()
             self.state = settings.RACE_SCREEN
         elif action == pause_menu.OPEN_SETTINGS:
             self.audio.play_sfx("menu_select")
@@ -285,6 +301,7 @@ class GameApplication:
             self.state = self.settings_return_state
 
     def _discard_race(self, destination):
+        self.audio.stop_race_audio()
         self.race = None
         self.progression_update = None
         self.persistence_message = ""
@@ -294,6 +311,8 @@ class GameApplication:
     def _process_race_presentation_events(self):
         for event_name in self.race.consume_presentation_events():
             self.audio.play_sfx(event_name)
+            if event_name in ("go", "finish"):
+                self.audio.play_sfx("crowd_cheer")
             if event_name == "collision" and self.user_settings.screen_shake:
                 self.screen_shake_timer = settings.COLLISION_SHAKE_DURATION
                 self.screen_shake_amplitude = settings.COLLISION_SHAKE_AMPLITUDE
@@ -322,6 +341,9 @@ class GameApplication:
 
         if progression_update.new_unlock_names:
             self.audio.play_sfx("unlock")
+
+    def shutdown(self):
+        self.audio.shutdown()
 
     def _draw_race(self, surface):
         self.race.draw(

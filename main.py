@@ -35,6 +35,7 @@ def main():
             application.draw(screen, clock.get_fps())
             pygame.display.flip()
     finally:
+        application.shutdown()
         pygame.quit()
 
 

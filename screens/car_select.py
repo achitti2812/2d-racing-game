@@ -4,6 +4,7 @@ import pygame
 
 from game import settings
 from game.progression import CAR_UNLOCK_HINTS
+from ui import components
 
 
 class CarSelectScreen:
@@ -57,7 +58,8 @@ class CarSelectScreen:
         return selected_car
 
     def draw(self, surface, profile):
-        surface.fill((14, 18, 23))
+        components.draw_background(surface)
+        self._draw_garage_floor(surface)
 
         title = self.title_font.render("SELECT CAR", True, settings.WHITE)
         surface.blit(
@@ -100,6 +102,16 @@ class CarSelectScreen:
             width=3,
             border_radius=10,
         )
+        pygame.draw.polygon(
+            surface,
+            border_color,
+            (
+                (panel_rect.x, panel_rect.y),
+                (panel_rect.x + 14, panel_rect.y),
+                (panel_rect.x, panel_rect.y + 48),
+            ),
+        )
+        pygame.draw.ellipse(surface, (42, 50, 58), (64, panel_y + 14, 102, 138))
 
         self._draw_car_preview(surface, 115, panel_y + 27, car_config)
 
@@ -154,6 +166,13 @@ class CarSelectScreen:
                 panel_y + 25 + row * 31,
                 car_config.accent_color,
             )
+
+    def _draw_garage_floor(self, surface):
+        pygame.draw.line(surface, (55, 65, 74), (0, 108), (800, 108), 2)
+        for y in range(115, 700, 52):
+            pygame.draw.line(surface, (25, 32, 39), (0, y), (800, y), 1)
+        for x in range(-200, 1000, 100):
+            pygame.draw.line(surface, (24, 31, 38), (400, 108), (x, 700), 1)
 
     def _draw_car_preview(self, surface, center_x, top_y, car_config):
         car_width = 54

@@ -1,4 +1,4 @@
-"""Player car state, controls, movement, drawing, and hitbox."""
+"""Player controls, unchanged arcade physics, and polished rotated rendering."""
 
 import pygame
 
@@ -27,6 +27,11 @@ class Player:
         self.curve_strength = 0.0
         self.curve_force = 0.0
         self.off_road = False
+        self.steering_input = 0
+        self.throttle_requested = False
+        self.braking = False
+        self.visual_steer_angle = 0.0
+        self.visual_steer_target = 0.0
         self._update_track_limits(self.track_center_x)
 
     @property
@@ -34,7 +39,6 @@ class Player:
         return settings.PLAYER_BODY_WIDTH / 2 + settings.PLAYER_WHEEL_OVERHANG
 
     def _update_track_limits(self, track_center_x):
-        """Update drivable and outer limits for the player's track position."""
         half_road_width = settings.ROAD_WIDTH / 2
         self.road_min_x = track_center_x - half_road_width + self.car_half_width
         self.road_max_x = track_center_x + half_road_width - self.car_half_width
@@ -42,7 +46,6 @@ class Player:
         self.outer_max_x = self.road_max_x + settings.OFF_ROAD_OUTER_MARGIN
 
     def sync_track_state(self, track_center_x, curve_strength):
-        """Refresh dynamic road limits without automatically centering the car."""
         self.track_center_x = track_center_x
         self.curve_strength = curve_strength
         self._update_track_limits(track_center_x)
@@ -54,22 +57,17 @@ class Player:
 
     @property
     def min_x(self):
-        """Leftmost center position allowed on the road's outer shoulder."""
         return self.outer_min_x
 
     @property
     def max_x(self):
-        """Rightmost center position allowed on the road's outer shoulder."""
         return self.outer_max_x
 
     def get_control_input(self):
-        """Read continuous steering, acceleration, and braking input."""
         keys = pygame.key.get_pressed()
-
         steer_left = keys[pygame.K_a] or keys[pygame.K_LEFT]
         steer_right = keys[pygame.K_d] or keys[pygame.K_RIGHT]
         steering_direction = int(steer_right) - int(steer_left)
-
         accelerate_pressed = keys[pygame.K_w] or keys[pygame.K_UP]
         brake_pressed = keys[pygame.K_s] or keys[pygame.K_DOWN]
         nitro_pressed = keys[pygame.K_SPACE]
@@ -81,24 +79,24 @@ class Player:
         )
 
     def update_controls(self, delta_time, track_center_x, curve_strength):
-        """Apply held controls, curve pressure, and surface effects."""
+        """Apply the existing physics plus visual-only steering orientation."""
         (
             steering_direction,
             accelerate_pressed,
             brake_pressed,
             nitro_pressed,
         ) = self.get_control_input()
+        self.steering_input = steering_direction
+        self.throttle_requested = accelerate_pressed and not brake_pressed
+        self.braking = brake_pressed
 
         self.sync_track_state(track_center_x, curve_strength)
-
         self.x += (
             steering_direction
             * self.car_config.steering_speed
             * delta_time
         )
 
-        # A positive centerline slope is a right bend, so its outside pressure
-        # acts left. Squaring speed makes braking meaningfully ease the turn.
         self.curve_force = (
             -curve_strength
             * self.speed
@@ -117,7 +115,6 @@ class Player:
             and self.nitro_amount > 0.0
         )
 
-        # Braking takes priority over both normal acceleration and nitro.
         if brake_pressed:
             self.speed -= self.car_config.brake_deceleration * delta_time
         elif self.nitro_active:
@@ -151,9 +148,6 @@ class Player:
             settings.MIN_SPEED,
             min(self.speed, self.car_config.nitro_max_speed),
         )
-
-        # Grass/shoulder drag removes high speed but still lets the player
-        # accelerate gently up to a recovery pace and steer back onto the road.
         if self.off_road and self.speed > self.car_config.offroad_speed_limit:
             self.speed = max(
                 self.car_config.offroad_speed_limit,
@@ -173,7 +167,6 @@ class Player:
             self.nitro_recharge_delay = max(
                 0.0, self.nitro_recharge_delay - delta_time
             )
-            # Holding Space on its own cannot propel, drain, or recharge.
             if self.nitro_recharge_delay <= 0.0 and not nitro_pressed:
                 self.nitro_amount = min(
                     self.nitro_capacity,
@@ -181,8 +174,28 @@ class Player:
                     + settings.NITRO_RECHARGE_RATE * delta_time,
                 )
 
+        self.update_visual_steering(steering_direction, delta_time)
+
+    def update_visual_steering(self, steering_direction, delta_time):
+        """Smooth a speed-scaled visual angle without changing the hitbox."""
+        speed_factor = min(
+            1.0, self.speed / settings.VISUAL_STEER_FULL_SPEED
+        )
+        self.visual_steer_target = (
+            -steering_direction
+            * settings.MAX_VISUAL_STEER_ANGLE
+            * speed_factor
+        )
+        max_change = settings.VISUAL_STEER_RESPONSE * delta_time
+        difference = self.visual_steer_target - self.visual_steer_angle
+        if abs(difference) <= max_change:
+            self.visual_steer_angle = self.visual_steer_target
+        else:
+            self.visual_steer_angle += max_change * (
+                1.0 if difference > 0.0 else -1.0
+            )
+
     def stop_nitro(self):
-        """Immediately disable boost without changing the remaining amount."""
         self.nitro_active = False
 
     def update_collision_timers(self, delta_time):
@@ -194,14 +207,16 @@ class Player:
         )
 
     def coast_after_finish(self, delta_time):
-        """Slow the post-finish camera motion without accepting controls."""
         self.speed = max(
             settings.MIN_SPEED,
             self.speed - settings.POST_FINISH_DECELERATION * delta_time,
         )
+        self.steering_input = 0
+        self.throttle_requested = False
+        self.braking = False
+        self.update_visual_steering(0, delta_time)
 
     def get_hitbox(self):
-        """Return a fair collision rectangle centered within the car body."""
         return pygame.Rect(
             round(self.x - settings.PLAYER_HITBOX_WIDTH / 2),
             round(
@@ -212,36 +227,8 @@ class Player:
             settings.PLAYER_HITBOX_HEIGHT,
         )
 
-    def _draw_nitro_exhaust(self, surface, car_center_x, car_top):
-        """Draw simple twin exhaust flames behind the car while boosting."""
-        exhaust_y = car_top + settings.PLAYER_HEIGHT - 2
-        for horizontal_offset in (-18, 18):
-            exhaust_x = car_center_x + horizontal_offset
-            pygame.draw.polygon(
-                surface,
-                settings.NITRO_BLUE,
-                [
-                    (exhaust_x - 6, exhaust_y),
-                    (exhaust_x + 6, exhaust_y),
-                    (exhaust_x + 3, exhaust_y + 20),
-                    (exhaust_x, exhaust_y + 30),
-                    (exhaust_x - 3, exhaust_y + 20),
-                ],
-            )
-            pygame.draw.polygon(
-                surface,
-                settings.NITRO_CYAN,
-                [
-                    (exhaust_x - 3, exhaust_y),
-                    (exhaust_x + 3, exhaust_y),
-                    (exhaust_x + 1, exhaust_y + 13),
-                    (exhaust_x, exhaust_y + 21),
-                    (exhaust_x - 1, exhaust_y + 13),
-                ],
-            )
-
     def draw(self, surface):
-        """Draw the existing top-down player car design."""
+        """Draw to a local surface, then rotate around the physical center."""
         is_flashing = (
             self.collision_cooldown > 0.0
             and int(
@@ -250,124 +237,145 @@ class Player:
             % 2
             == 0
         )
-        car_center_x = round(self.x)
-        car_top = round(self.y)
-        car_left = car_center_x - settings.PLAYER_BODY_WIDTH // 2
-        body_fill_color = (
+        car_surface = pygame.Surface((130, 210), pygame.SRCALPHA)
+        self._draw_local_car(car_surface, is_flashing)
+        rotated = pygame.transform.rotozoom(
+            car_surface, self.visual_steer_angle, 1.0
+        )
+        physical_center = (
+            round(self.x),
+            round(self.y + settings.PLAYER_HEIGHT / 2),
+        )
+        surface.blit(rotated, rotated.get_rect(center=physical_center))
+
+    def _draw_local_car(self, surface, is_flashing):
+        center_x = surface.get_width() // 2
+        top = 39
+        left = center_x - settings.PLAYER_BODY_WIDTH // 2
+        body_fill = (
             settings.CAR_FLASH_LIGHT
             if is_flashing
             else self.car_config.body_color
         )
-        body_outline_color = (
-            settings.CAR_FLASH_OUTLINE
-            if is_flashing
-            else self.car_config.accent_color
-        )
-        accent_color = (
+        accent = (
             settings.CAR_FLASH_OUTLINE
             if is_flashing
             else self.car_config.accent_color
         )
 
         if self.nitro_active:
-            self._draw_nitro_exhaust(surface, car_center_x, car_top)
+            self._draw_local_nitro(surface, center_x, top)
 
-        wheel_width = 11
-        wheel_height = 31
+        shadow = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        pygame.draw.ellipse(
+            shadow,
+            (0, 0, 0, 105),
+            (left - 7, top + 9, settings.PLAYER_BODY_WIDTH + 18, 132),
+        )
+        surface.blit(shadow, (4, 5))
+
         for wheel_x in (
-            car_left - settings.PLAYER_WHEEL_OVERHANG,
-            car_left + settings.PLAYER_BODY_WIDTH - 6,
+            left - settings.PLAYER_WHEEL_OVERHANG,
+            left + settings.PLAYER_BODY_WIDTH - 6,
         ):
-            pygame.draw.rect(
-                surface,
-                settings.BLACK,
-                (wheel_x, car_top + 22, wheel_width, wheel_height),
-                border_radius=4,
-            )
-            pygame.draw.rect(
-                surface,
-                settings.BLACK,
-                (wheel_x, car_top + 88, wheel_width, wheel_height),
-                border_radius=4,
-            )
+            for wheel_y in (top + 22, top + 88):
+                pygame.draw.rect(
+                    surface,
+                    (10, 12, 14),
+                    (wheel_x, wheel_y, 11, 31),
+                    border_radius=4,
+                )
 
-        body_points = [
-            (car_center_x - 24, car_top),
-            (car_center_x + 24, car_top),
-            (car_left + settings.PLAYER_BODY_WIDTH, car_top + 28),
-            (
-                car_left + settings.PLAYER_BODY_WIDTH,
-                car_top + settings.PLAYER_HEIGHT - 12,
-            ),
-            (car_center_x + 25, car_top + settings.PLAYER_HEIGHT),
-            (car_center_x - 25, car_top + settings.PLAYER_HEIGHT),
-            (car_left, car_top + settings.PLAYER_HEIGHT - 12),
-            (car_left, car_top + 28),
-        ]
-        pygame.draw.polygon(surface, body_fill_color, body_points)
-        pygame.draw.polygon(surface, body_outline_color, body_points, width=4)
-
-        # A simple center stripe reinforces each selected car's accent color.
-        pygame.draw.rect(
-            surface,
-            accent_color,
-            (car_center_x - 4, car_top + 5, 8, 25),
-            border_radius=2,
+        body_points = (
+            (center_x - 24, top),
+            (center_x + 24, top),
+            (left + settings.PLAYER_BODY_WIDTH, top + 28),
+            (left + settings.PLAYER_BODY_WIDTH, top + 120),
+            (center_x + 25, top + settings.PLAYER_HEIGHT),
+            (center_x - 25, top + settings.PLAYER_HEIGHT),
+            (left, top + 120),
+            (left, top + 28),
         )
-        pygame.draw.rect(
-            surface,
-            accent_color,
-            (car_center_x - 4, car_top + 103, 8, 21),
-            border_radius=2,
+        pygame.draw.polygon(surface, body_fill, body_points)
+        pygame.draw.polygon(surface, accent, body_points, width=4)
+        pygame.draw.line(
+            surface, self._lighten(body_fill), body_points[0], body_points[7], 2
         )
 
+        pygame.draw.rect(
+            surface, accent, (center_x - 4, top + 5, 8, 25), border_radius=2
+        )
+        pygame.draw.rect(
+            surface, accent, (center_x - 4, top + 103, 8, 21), border_radius=2
+        )
         pygame.draw.polygon(
             surface,
             settings.WINDOW_COLOR,
-            [
-                (car_center_x - 22, car_top + 35),
-                (car_center_x + 22, car_top + 35),
-                (car_center_x + 27, car_top + 59),
-                (car_center_x - 27, car_top + 59),
-            ],
+            (
+                (center_x - 22, top + 35),
+                (center_x + 22, top + 35),
+                (center_x + 27, top + 59),
+                (center_x - 27, top + 59),
+            ),
         )
         pygame.draw.line(
             surface,
             settings.WINDOW_HIGHLIGHT,
-            (car_center_x - 15, car_top + 39),
-            (car_center_x + 12, car_top + 39),
+            (center_x - 15, top + 39),
+            (center_x + 12, top + 39),
             2,
         )
         pygame.draw.rect(
             surface,
             settings.WINDOW_COLOR,
-            (car_center_x - 27, car_top + 65, 20, 34),
+            (center_x - 27, top + 65, 20, 34),
             border_radius=3,
         )
         pygame.draw.rect(
             surface,
             settings.WINDOW_COLOR,
-            (car_center_x + 7, car_top + 65, 20, 34),
+            (center_x + 7, top + 65, 20, 34),
             border_radius=3,
         )
         pygame.draw.polygon(
             surface,
-            settings.WINDOW_COLOR,
-            [
-                (car_center_x - 26, car_top + 105),
-                (car_center_x + 26, car_top + 105),
-                (car_center_x + 20, car_top + 120),
-                (car_center_x - 20, car_top + 120),
-            ],
+            (68, 112, 132),
+            (
+                (center_x - 26, top + 105),
+                (center_x + 26, top + 105),
+                (center_x + 20, top + 120),
+                (center_x - 20, top + 120),
+            ),
         )
+        for light_x in (left + 12, left + 46):
+            pygame.draw.rect(surface, (255, 238, 158), (light_x, top + 8, 12, 6))
+            pygame.draw.rect(surface, (239, 66, 55), (light_x, top + 119, 12, 6))
 
-        pygame.draw.rect(
-            surface,
-            (255, 236, 151),
-            (car_left + 12, car_top + 8, 12, 6),
-        )
-        pygame.draw.rect(
-            surface,
-            (255, 236, 151),
-            (car_left + 46, car_top + 8, 12, 6),
-        )
+    def _draw_local_nitro(self, surface, center_x, top):
+        exhaust_y = top + settings.PLAYER_HEIGHT - 2
+        for horizontal_offset in (-18, 18):
+            exhaust_x = center_x + horizontal_offset
+            pygame.draw.polygon(
+                surface,
+                settings.NITRO_BLUE,
+                (
+                    (exhaust_x - 7, exhaust_y),
+                    (exhaust_x + 7, exhaust_y),
+                    (exhaust_x + 3, exhaust_y + 25),
+                    (exhaust_x, exhaust_y + 39),
+                    (exhaust_x - 3, exhaust_y + 25),
+                ),
+            )
+            pygame.draw.polygon(
+                surface,
+                settings.NITRO_CYAN,
+                (
+                    (exhaust_x - 3, exhaust_y),
+                    (exhaust_x + 3, exhaust_y),
+                    (exhaust_x, exhaust_y + 28),
+                ),
+            )
+
+    @staticmethod
+    def _lighten(color):
+        return tuple(min(255, channel + 45) for channel in color)

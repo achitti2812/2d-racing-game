@@ -6,6 +6,7 @@ from game import settings
 from game.cars import CARS, CARS_BY_ID
 from game.formatting import ordinal
 from game.tracks import TRACKS
+from ui import components
 
 
 class ProfileScreen:
@@ -29,7 +30,7 @@ class ProfileScreen:
         return None
 
     def draw(self, surface, profile):
-        surface.fill((14, 18, 23))
+        components.draw_background(surface)
         title = self.title_font.render("PLAYER PROFILE", True, settings.WHITE)
         surface.blit(
             title,

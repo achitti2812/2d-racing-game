@@ -1,5 +1,6 @@
 """Persistent competitive opponent cars."""
 
+import math
 import random
 
 import pygame
@@ -55,6 +56,7 @@ class Opponent:
         self.upcoming_curve_strength = 0.0
         self.decision_timer = self._random_decision_time()
         self.x = track.get_center_x(self.distance) + self.lane_offset
+        self.heading_angle = self.calculate_heading(track, self.distance)
 
     def _random_decision_time(self):
         return self.random_source.uniform(*self.decision_time_range)
@@ -139,6 +141,20 @@ class Opponent:
             self.distance, camera_distance
         )
         self.x = track.get_center_x(self.distance) + self.lane_offset
+        self.heading_angle = self.calculate_heading(track, self.distance)
+
+    @staticmethod
+    def calculate_heading(track, world_distance):
+        """Return a visual-only heading from the local centerline tangent."""
+        sample = settings.OPPONENT_HEADING_SAMPLE_DISTANCE
+        before = track.get_center_x(world_distance - sample / 2)
+        after = track.get_center_x(world_distance + sample / 2)
+        screen_forward = sample * settings.RELATIVE_MOTION_SCALE
+        heading = -math.degrees(math.atan2(after - before, screen_forward))
+        return max(
+            -settings.OPPONENT_MAX_HEADING_ANGLE,
+            min(heading, settings.OPPONENT_MAX_HEADING_ANGLE),
+        )
 
     def is_visible(self):
         return (
@@ -165,95 +181,104 @@ class Opponent:
         )
 
     def draw(self, surface):
-        """Draw the existing compact race-car design."""
-        car_center_x = round(self.x)
-        car_top = round(self.y)
-        car_left = car_center_x - settings.OPPONENT_WIDTH // 2
+        """Draw a shadowed local car rotated to the track tangent."""
+        car_surface = pygame.Surface((112, 164), pygame.SRCALPHA)
+        center_x = car_surface.get_width() // 2
+        top = 24
+        left = center_x - settings.OPPONENT_WIDTH // 2
 
-        wheel_width = 9
-        wheel_height = 25
-        for wheel_x in (
-            car_left - 4,
-            car_left + settings.OPPONENT_WIDTH - 5,
-        ):
-            pygame.draw.rect(
-                surface,
-                settings.BLACK,
-                (wheel_x, car_top + 20, wheel_width, wheel_height),
-                border_radius=3,
-            )
-            pygame.draw.rect(
-                surface,
-                settings.BLACK,
-                (wheel_x, car_top + 74, wheel_width, wheel_height),
-                border_radius=3,
-            )
-
-        body_points = [
-            (car_center_x - 19, car_top),
-            (car_center_x + 19, car_top),
-            (car_left + settings.OPPONENT_WIDTH, car_top + 24),
-            (
-                car_left + settings.OPPONENT_WIDTH - 3,
-                car_top + settings.OPPONENT_HEIGHT - 13,
-            ),
-            (car_center_x + 22, car_top + settings.OPPONENT_HEIGHT),
-            (car_center_x - 22, car_top + settings.OPPONENT_HEIGHT),
-            (car_left + 3, car_top + settings.OPPONENT_HEIGHT - 13),
-            (car_left, car_top + 24),
-        ]
-        pygame.draw.polygon(surface, self.color, body_points)
-        pygame.draw.polygon(surface, settings.BLACK, body_points, width=2)
-
-        pygame.draw.rect(
-            surface,
-            self.accent_color,
-            (
-                car_center_x - 4,
-                car_top + 5,
-                8,
-                settings.OPPONENT_HEIGHT - 15,
-            ),
+        shadow = pygame.Surface(car_surface.get_size(), pygame.SRCALPHA)
+        pygame.draw.ellipse(
+            shadow,
+            (0, 0, 0, 95),
+            (left - 5, top + 7, settings.OPPONENT_WIDTH + 14, 116),
         )
-        pygame.draw.polygon(
-            surface,
-            settings.WINDOW_COLOR,
-            [
-                (car_center_x - 19, car_top + 34),
-                (car_center_x + 19, car_top + 34),
-                (car_center_x + 23, car_top + 57),
-                (car_center_x - 23, car_top + 57),
-            ],
+        car_surface.blit(shadow, (3, 4))
+
+        for wheel_x in (left - 4, left + settings.OPPONENT_WIDTH - 5):
+            for wheel_y in (top + 20, top + 74):
+                pygame.draw.rect(
+                    car_surface,
+                    (10, 12, 14),
+                    (wheel_x, wheel_y, 9, 25),
+                    border_radius=3,
+                )
+
+        body_points = (
+            (center_x - 19, top),
+            (center_x + 19, top),
+            (left + settings.OPPONENT_WIDTH, top + 24),
+            (left + settings.OPPONENT_WIDTH - 3, top + 103),
+            (center_x + 22, top + settings.OPPONENT_HEIGHT),
+            (center_x - 22, top + settings.OPPONENT_HEIGHT),
+            (left + 3, top + 103),
+            (left, top + 24),
         )
-        pygame.draw.polygon(
-            surface,
-            settings.WINDOW_COLOR,
-            [
-                (car_center_x - 22, car_top + 64),
-                (car_center_x + 22, car_top + 64),
-                (car_center_x + 18, car_top + 83),
-                (car_center_x - 18, car_top + 83),
-            ],
+        pygame.draw.polygon(car_surface, self.color, body_points)
+        pygame.draw.polygon(car_surface, self.accent_color, body_points, width=3)
+        highlight = tuple(min(255, channel + 38) for channel in self.color)
+        pygame.draw.line(
+            car_surface, highlight, body_points[0], body_points[7], 2
         )
         pygame.draw.rect(
-            surface,
+            car_surface,
+            self.accent_color,
+            (center_x - 4, top + 5, 8, settings.OPPONENT_HEIGHT - 15),
+        )
+        pygame.draw.polygon(
+            car_surface,
+            settings.WINDOW_COLOR,
+            (
+                (center_x - 19, top + 34),
+                (center_x + 19, top + 34),
+                (center_x + 23, top + 57),
+                (center_x - 23, top + 57),
+            ),
+        )
+        pygame.draw.line(
+            car_surface,
+            settings.WINDOW_HIGHLIGHT,
+            (center_x - 13, top + 38),
+            (center_x + 10, top + 38),
+            2,
+        )
+        pygame.draw.polygon(
+            car_surface,
+            (65, 108, 128),
+            (
+                (center_x - 22, top + 64),
+                (center_x + 22, top + 64),
+                (center_x + 18, top + 83),
+                (center_x - 18, top + 83),
+            ),
+        )
+        pygame.draw.rect(
+            car_surface,
             self.accent_color,
             (
-                car_left - 3,
-                car_top + settings.OPPONENT_HEIGHT - 13,
+                left - 3,
+                top + settings.OPPONENT_HEIGHT - 13,
                 settings.OPPONENT_WIDTH + 6,
                 7,
             ),
             border_radius=2,
         )
-        pygame.draw.rect(
-            surface, settings.BLACK, (car_left - 3, car_top + 10, 10, 5)
+        for light_x in (left + 7, left + settings.OPPONENT_WIDTH - 17):
+            pygame.draw.rect(
+                car_surface, (245, 226, 146), (light_x, top + 9, 10, 5)
+            )
+            pygame.draw.rect(
+                car_surface, (226, 60, 52), (light_x, top + 105, 10, 5)
+            )
+
+        rotated = pygame.transform.rotozoom(
+            car_surface, self.heading_angle, 1.0
         )
-        pygame.draw.rect(
-            surface,
-            settings.BLACK,
-            (car_left + settings.OPPONENT_WIDTH - 7, car_top + 10, 10, 5),
+        physical_center = (
+            round(self.x),
+            round(self.y + settings.OPPONENT_HEIGHT / 2),
         )
+        surface.blit(rotated, rotated.get_rect(center=physical_center))
 
     def draw_debug(self, surface, font):
         """Draw lightweight speed and target information beside the car."""
